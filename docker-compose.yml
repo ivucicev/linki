@@ -1,6 +1,6 @@
 services:
   linki:
-    image: ivucicev/linki:latest
+    image: ghcr.io/ivucicev/linki:latest
     # To build from source instead: comment out image above and uncomment below
     # build: .
     ports:
