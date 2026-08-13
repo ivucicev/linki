@@ -1,6 +1,6 @@
 services:
   linki:
-    image: moaljumaa/linki:latest
+    image: ivucicev/linki:sha-5e24a1c
     # To build from source instead: comment out image above and uncomment below
     # build: .
     ports:
