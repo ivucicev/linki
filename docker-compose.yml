@@ -4,7 +4,7 @@ services:
     # To build from source instead: comment out image above and uncomment below
     # build: .
     ports:
-      - "127.0.0.1:${PORT:-3456}:3000"
+      - "127.0.0.1:${PORT:-3458}:3000"
     volumes:
       # Persist SQLite database outside the container
       - ./data:/data
