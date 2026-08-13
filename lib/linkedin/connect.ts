@@ -14,7 +14,6 @@ export async function sendConnectionRequest(page: Page, linkedinUrl: string): Pr
   await page.goto(linkedinUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
   await page.waitForTimeout(2000 + Math.random() * 1000);
 
-<<<<<<< HEAD
   // Already connected? Primary signal: presence of the profile's "Message" link
   // (only shown to 1st-degree connections) — an href attribute, not a CSS class
   // or translated text, so it survives LinkedIn's class-name hashing and non-
@@ -34,10 +33,6 @@ export async function sendConnectionRequest(page: Page, linkedinUrl: string): Pr
   const hasMessageLink = await topCard.locator('a[href*="/messaging/compose"]').first().count() > 0;
   if (hasMessageLink) throw new AlreadyConnectedError("Already connected");
   const pageText = await topCard.innerText().catch(() => "");
-=======
-  // Already connected?
-  const pageText = await page.locator(".pv-top-card, .scaffold-layout__main").first().innerText().catch(() => "");
->>>>>>> c5cc6f0 (release: 2026-07-15)
   if (/\b1st\b/.test(pageText)) throw new AlreadyConnectedError("Already connected");
 
   // Pending?

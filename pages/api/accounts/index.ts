@@ -7,7 +7,6 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
 
   // Excludes cookies_json — the frontend never uses the raw session blob, only
   // is_authenticated, so there's no reason to ship it (even encrypted) to the client.
-<<<<<<< HEAD
   const ACCOUNT_COLUMNS = `a.id, a.name, a.email, a.is_authenticated, a.daily_connection_limit, a.daily_message_limit, a.daily_inmail_limit,
     a.active_hours_start, a.active_hours_end, a.timezone, a.working_days, a.created_at,
     a.inbox_synced_at, a.accepted_sync_at, a.li_connections, a.li_pending, a.li_profile_views,
@@ -19,15 +18,6 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
         (SELECT COUNT(*) FROM runs r WHERE r.account_id = a.id AND r.status IN ('running', 'paused')) AS active_run_count
       FROM accounts a ORDER BY a.created_at DESC
     `).all();
-=======
-  const ACCOUNT_COLUMNS = `id, name, email, is_authenticated, daily_connection_limit, daily_message_limit, daily_inmail_limit,
-    active_hours_start, active_hours_end, timezone, working_days, created_at,
-    inbox_synced_at, accepted_sync_at, li_connections, li_pending, li_profile_views,
-    li_stats_synced_at, connections_synced_through_ms`;
-
-  if (req.method === "GET") {
-    const accounts = db.prepare(`SELECT ${ACCOUNT_COLUMNS} FROM accounts ORDER BY created_at DESC`).all();
->>>>>>> c5cc6f0 (release: 2026-07-15)
     return res.json(accounts);
   }
 
@@ -41,11 +31,7 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
           "INSERT INTO accounts (id, name, email, daily_connection_limit, daily_message_limit, daily_inmail_limit) VALUES (?, ?, ?, ?, ?, ?)"
         )
         .run(id, name, email, daily_connection_limit, daily_message_limit, daily_inmail_limit);
-<<<<<<< HEAD
       const account = db.prepare(`SELECT ${ACCOUNT_COLUMNS} FROM accounts a WHERE a.id = ?`).get(id);
-=======
-      const account = db.prepare(`SELECT ${ACCOUNT_COLUMNS} FROM accounts WHERE id = ?`).get(id);
->>>>>>> c5cc6f0 (release: 2026-07-15)
       return res.status(201).json(account);
     } catch {
       return res.status(409).json({ error: "Email already exists" });

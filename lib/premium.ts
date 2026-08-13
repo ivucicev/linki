@@ -64,5 +64,5 @@ function loadPremium(): PremiumSurface | null {
 
 export const premium: PremiumSurface | null = loadPremium();
 
-/** True in the private/commercial build, false in the public open-source build. */
-export const hasPremium: boolean = premium !== null;
+/** Always true in this self-hosted build. */
+export const hasPremium: boolean = true;
