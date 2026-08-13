@@ -23,9 +23,13 @@ interface LiAccount {
   is_authenticated: number;
   daily_connection_limit: number; daily_message_limit: number; daily_inmail_limit: number;
   active_hours_start: number; active_hours_end: number;
+<<<<<<< HEAD
   timezone: string; working_days: string;
   created_at: string;
   active_run_count: number;
+=======
+  created_at: string;
+>>>>>>> c5cc6f0 (release: 2026-07-15)
 }
 
 interface EmailAccount {
@@ -50,10 +54,16 @@ export const getServerSideProps: GetServerSideProps = async ({ query }) => {
   const db = getDb();
   const liAccounts = db
     .prepare(
+<<<<<<< HEAD
       `SELECT a.id, a.name, a.email, a.is_authenticated, a.daily_connection_limit, a.daily_message_limit, a.daily_inmail_limit,
               a.active_hours_start, a.active_hours_end, a.timezone, a.working_days, a.created_at,
               (SELECT COUNT(*) FROM runs r WHERE r.account_id = a.id AND r.status IN ('running', 'paused')) AS active_run_count
        FROM accounts a ORDER BY a.created_at DESC`
+=======
+      `SELECT id, name, email, is_authenticated, daily_connection_limit, daily_message_limit, daily_inmail_limit,
+              active_hours_start, active_hours_end, timezone, working_days, created_at
+       FROM accounts ORDER BY created_at DESC`
+>>>>>>> c5cc6f0 (release: 2026-07-15)
     )
     .all();
   const emailAccounts = db
@@ -218,6 +228,7 @@ export default function SettingsPage({
 
 // ─── LinkedIn Tab ─────────────────────────────────────────────────────────────
 
+<<<<<<< HEAD
 const BLANK_LI_FORM = {
   name: "", email: "",
   daily_connection_limit: 20, daily_message_limit: 50, daily_inmail_limit: 15,
@@ -230,6 +241,12 @@ function LinkedInTab({ initialAccounts }: { initialAccounts: LiAccount[] }) {
   const [showModal, setShowModal] = useState(false);
   const [editingAccount, setEditingAccount] = useState<LiAccount | null>(null);
   const [form, setForm] = useState(BLANK_LI_FORM);
+=======
+function LinkedInTab({ initialAccounts }: { initialAccounts: LiAccount[] }) {
+  const [accounts, setAccounts] = useState<LiAccount[]>(initialAccounts);
+  const [showModal, setShowModal] = useState(false);
+  const [form, setForm] = useState({ name: "", email: "", daily_connection_limit: 20, daily_message_limit: 50, daily_inmail_limit: 15 });
+>>>>>>> c5cc6f0 (release: 2026-07-15)
   const [loading, setLoading] = useState(false);
   const [authModal, setAuthModal] = useState<string | null>(null);
   const [authMode, setAuthMode] = useState<"login" | "cookies">("login");
@@ -300,6 +317,7 @@ function LinkedInTab({ initialAccounts }: { initialAccounts: LiAccount[] }) {
     setAccounts(await res.json());
   }
 
+<<<<<<< HEAD
   function openCreate() {
     setEditingAccount(null);
     setForm(BLANK_LI_FORM);
@@ -351,6 +369,24 @@ function LinkedInTab({ initialAccounts }: { initialAccounts: LiAccount[] }) {
     setAccounts((prev) => prev.filter((a) => a.id !== id));
   }
 
+=======
+  async function createAccount(e: React.FormEvent) {
+    e.preventDefault();
+    setLoading(true);
+    const res = await fetch("/api/accounts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(form),
+    });
+    setLoading(false);
+    if (!res.ok) { toast.error((await res.json()).error ?? "Failed"); return; }
+    toast.success("Account created");
+    setShowModal(false);
+    setForm({ name: "", email: "", daily_connection_limit: 20, daily_message_limit: 50, daily_inmail_limit: 15 });
+    refresh();
+  }
+
+>>>>>>> c5cc6f0 (release: 2026-07-15)
   async function submitAuth(e: React.FormEvent) {
     e.preventDefault();
     if (!authModal) return;
@@ -373,7 +409,11 @@ function LinkedInTab({ initialAccounts }: { initialAccounts: LiAccount[] }) {
         <p className="text-sm text-base-content/50">LinkedIn accounts used for browser automation</p>
         <button
           className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-primary text-primary-content hover:bg-primary/90 transition-colors"
+<<<<<<< HEAD
           onClick={openCreate}
+=======
+          onClick={() => setShowModal(true)}
+>>>>>>> c5cc6f0 (release: 2026-07-15)
         >
           <RiAddLine size={14} /> Add Account
         </button>
@@ -392,6 +432,7 @@ function LinkedInTab({ initialAccounts }: { initialAccounts: LiAccount[] }) {
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium">{a.name}</p>
+<<<<<<< HEAD
                 <p className="text-xs text-base-content/40">
                   {a.email} · {a.daily_connection_limit} conn/day · {a.daily_message_limit} msg/day · {a.daily_inmail_limit} inmail/day
                   {" · "}{fmtHour(a.active_hours_start ?? 9)}–{fmtHour(a.active_hours_end ?? 18)} ({a.timezone ?? "UTC"})
@@ -403,6 +444,11 @@ function LinkedInTab({ initialAccounts }: { initialAccounts: LiAccount[] }) {
                     <span className="w-1.5 h-1.5 rounded-full bg-warning animate-pulse" /> In use
                   </span>
                 ) : null}
+=======
+                <p className="text-xs text-base-content/40">{a.email} · {a.daily_connection_limit} conn/day · {a.daily_message_limit} msg/day · {a.daily_inmail_limit} inmail/day</p>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+>>>>>>> c5cc6f0 (release: 2026-07-15)
                 <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium ${a.is_authenticated ? "bg-success/15 text-success" : "bg-base-300 text-base-content/40"}`}>
                   {a.is_authenticated ? <><RiCheckLine size={10} /> Auth</> : "Unauth"}
                 </span>
@@ -412,6 +458,7 @@ function LinkedInTab({ initialAccounts }: { initialAccounts: LiAccount[] }) {
                 >
                   <RiShieldKeyholeLine size={12} /> Authenticate
                 </button>
+<<<<<<< HEAD
                 <button
                   className="inline-flex items-center p-1.5 rounded-lg text-base-content/40 hover:text-base-content hover:bg-base-300/50 transition-colors"
                   onClick={() => openEdit(a)}
@@ -426,18 +473,29 @@ function LinkedInTab({ initialAccounts }: { initialAccounts: LiAccount[] }) {
                 >
                   <RiDeleteBinLine size={13} />
                 </button>
+=======
+>>>>>>> c5cc6f0 (release: 2026-07-15)
               </div>
             </div>
           ))}
         </div>
       )}
 
+<<<<<<< HEAD
       {/* Add/Edit modal */}
       {showModal && (
         <div className="modal modal-open">
           <div className="modal-box bg-base-200 border border-base-300/50 max-w-md">
             <h3 className="font-semibold text-base mb-4">{editingAccount ? "Edit LinkedIn Account" : "Add LinkedIn Account"}</h3>
             <form onSubmit={save} className="flex flex-col gap-3">
+=======
+      {/* Add modal */}
+      {showModal && (
+        <div className="modal modal-open">
+          <div className="modal-box bg-base-200 border border-base-300/50 max-w-md">
+            <h3 className="font-semibold text-base mb-4">Add LinkedIn Account</h3>
+            <form onSubmit={createAccount} className="flex flex-col gap-3">
+>>>>>>> c5cc6f0 (release: 2026-07-15)
               <div>
                 <label className="label text-xs text-base-content/50 pb-1">Display name</label>
                 <input className="input input-bordered input-sm w-full bg-base-300/50" placeholder="e.g. Mohammad LinkedIn" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
@@ -460,6 +518,7 @@ function LinkedInTab({ initialAccounts }: { initialAccounts: LiAccount[] }) {
                   <input type="number" className="input input-bordered input-sm w-full bg-base-300/50" value={form.daily_inmail_limit} onChange={(e) => setForm({ ...form, daily_inmail_limit: Number(e.target.value) })} min={1} max={100} />
                 </div>
               </div>
+<<<<<<< HEAD
 
               <div className="border-t border-base-300/40 pt-3 flex flex-col gap-3">
                 <p className="text-xs font-medium text-base-content/50 uppercase tracking-wide">Working Hours</p>
@@ -520,6 +579,12 @@ function LinkedInTab({ initialAccounts }: { initialAccounts: LiAccount[] }) {
                 <button type="button" className="inline-flex items-center px-3 py-1.5 rounded-lg text-sm text-base-content/60 hover:text-base-content hover:bg-base-300/50 transition-colors" onClick={() => { setShowModal(false); setEditingAccount(null); }}>Cancel</button>
                 <button type="submit" className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-sm font-medium bg-primary text-primary-content hover:bg-primary/90 transition-colors disabled:opacity-50" disabled={loading}>
                   {loading ? <span className="loading loading-spinner loading-xs" /> : editingAccount ? "Save Changes" : "Add Account"}
+=======
+              <div className="modal-action mt-2">
+                <button type="button" className="inline-flex items-center px-3 py-1.5 rounded-lg text-sm text-base-content/60 hover:text-base-content hover:bg-base-300/50 transition-colors" onClick={() => setShowModal(false)}>Cancel</button>
+                <button type="submit" className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-sm font-medium bg-primary text-primary-content hover:bg-primary/90 transition-colors disabled:opacity-50" disabled={loading}>
+                  {loading ? <span className="loading loading-spinner loading-xs" /> : "Add Account"}
+>>>>>>> c5cc6f0 (release: 2026-07-15)
                 </button>
               </div>
             </form>

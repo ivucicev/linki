@@ -3,7 +3,11 @@ import { randomUUID } from "crypto";
 import { getSessionPage, saveSessionState, getSessionContext } from "@/lib/linkedin/session";
 import { visitProfile } from "@/lib/linkedin/visit";
 import { sendConnectionRequest, WeeklyLimitError, AlreadyConnectedError, PendingInviteError } from "@/lib/linkedin/connect";
+<<<<<<< HEAD
 import { sendMessage, NotConnectedError } from "@/lib/linkedin/message";
+=======
+import { sendMessage } from "@/lib/linkedin/message";
+>>>>>>> c5cc6f0 (release: 2026-07-15)
 import { shouldSyncAccepted, syncAcceptedConnections } from "@/lib/linkedin/sync-accepted";
 import { sendEmail } from "@/lib/email/sender";
 import { shouldSyncEmailInbox, syncEmailInbox } from "@/lib/email/inbox";
@@ -17,6 +21,7 @@ const SALES_NAV_ENRICH_MIN_GAP_MS = 5 * 60 * 1000;
 // Per-account timestamp of last ensureSalesNavEnriched execution
 const lastSalesNavEnrichAt: Record<string, number> = {};
 
+<<<<<<< HEAD
 // Accounts that reported "No InMail credits left" today (Jul 2026 incident — LinkedIn's
 // own credit balance, distinct from daily_inmail_limit; without this, a depleted account
 // re-attempted InMail on every queued lead, each burning a ~30-50s Sales Nav page load for
@@ -28,6 +33,8 @@ function inmailCreditsExhaustedToday(accountId: string): boolean {
   return inmailCreditsExhaustedOn[accountId] === todayLocalDate();
 }
 
+=======
+>>>>>>> c5cc6f0 (release: 2026-07-15)
 // Initial wait before first acceptance check (6h)
 const CONNECTION_RECHECK_HOURS = 6;
 // Max days to wait for acceptance before giving up
@@ -182,7 +189,10 @@ interface Target {
   email_status: string | null;
   email_replied_at: string | null;
   company_id: string | null;
+<<<<<<< HEAD
   messaging_urn: string | null;
+=======
+>>>>>>> c5cc6f0 (release: 2026-07-15)
 }
 
 interface Template { id: string; body: string; }
@@ -502,6 +512,7 @@ async function executeStep(
       log(db, runId, target.id, "info", `Visiting ${name}`);
       const linkedinUrl = await getLinkedinUrl(db, target, accountId);
       const page = await getSessionPage(accountId);
+<<<<<<< HEAD
       let visitResult: { isFirstDegree: boolean; messagingUrn: string | null };
       try { visitResult = await visitProfile(page, linkedinUrl); } finally { await page.close(); }
       await saveSessionState(accountId);
@@ -512,6 +523,10 @@ async function executeStep(
       if (visitResult.messagingUrn) {
         db.prepare("UPDATE targets SET messaging_urn = COALESCE(messaging_urn, ?) WHERE id = ?").run(visitResult.messagingUrn, target.id);
       }
+=======
+      try { await visitProfile(page, linkedinUrl); } finally { await page.close(); }
+      await saveSessionState(accountId);
+>>>>>>> c5cc6f0 (release: 2026-07-15)
       trAdvance(db, tr, steps);
       log(db, runId, target.id, "info", `Visited ${name}`);
 
@@ -631,6 +646,7 @@ async function executeStep(
 
       db.prepare("UPDATE run_profile_tracks SET last_step_at = datetime('now') WHERE id = ?").run(tr.id);
       log(db, runId, target.id, "info", `Sending message to ${name}`);
+<<<<<<< HEAD
       const messageLinkedinUrl = await getLinkedinUrl(db, target, accountId);
       const page = await getSessionPage(accountId);
       try {
@@ -648,6 +664,12 @@ async function executeStep(
           return;
         }
         throw err;
+=======
+      const page = await getSessionPage(accountId);
+      try {
+        if (!target.full_name) throw new Error(`Target ${target.id} has no full_name — cannot search messaging`);
+        await sendMessage(page, target.full_name, messageText);
+>>>>>>> c5cc6f0 (release: 2026-07-15)
       } finally {
         await page.close();
       }
@@ -920,6 +942,7 @@ async function executeStep(
       trWait(db, tr, CONNECTION_RECHECK_HOURS);
       return;
     }
+<<<<<<< HEAD
     if (msg.includes("No InMail credits left")) {
       inmailCreditsExhaustedOn[accountId] = todayLocalDate();
       const slot = rescheduleToTomorrow(accountLimits);
@@ -927,6 +950,8 @@ async function executeStep(
       trReschedule(db, tr, slot);
       return;
     }
+=======
+>>>>>>> c5cc6f0 (release: 2026-07-15)
     log(db, runId, target.id, "error", `Error on ${name}: ${msg}`);
     trFail(db, tr, msg);
   }
@@ -1050,9 +1075,12 @@ async function tick(db: ReturnType<typeof getDb>): Promise<void> {
       } catch (e) {
         console.warn("[runner] Email inbox sync error:", e instanceof Error ? e.message : e);
       }
+<<<<<<< HEAD
       // Space out back-to-back IMAP syncs — a 20-account burst with zero gap
       // between them held the host busy for minutes straight (Jul 2026 incident).
       await sleep(2000);
+=======
+>>>>>>> c5cc6f0 (release: 2026-07-15)
     }
   }
 
@@ -1326,7 +1354,11 @@ async function tick(db: ReturnType<typeof getDb>): Promise<void> {
     } else if (step.step_type === "sales_inmail") {
       const sentToday = inmailsSentToday.get(tr.account_id) ?? 0;
       const planned = inmailsPlanned.get(tr.account_id) ?? 0;
+<<<<<<< HEAD
       if (inmailCreditsExhaustedToday(tr.account_id) || sentToday + planned >= (limits.daily_inmail_limit ?? 15)) {
+=======
+      if (sentToday + planned >= (limits.daily_inmail_limit ?? 15)) {
+>>>>>>> c5cc6f0 (release: 2026-07-15)
         toReschedule.push(tr);
       } else {
         inmailsPlanned.set(tr.account_id, planned + 1);

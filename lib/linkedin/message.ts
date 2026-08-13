@@ -1,4 +1,5 @@
 import type { Page } from "playwright";
+<<<<<<< HEAD
 import { visitProfile } from "./visit";
 
 export class NotConnectedError extends Error {}
@@ -76,6 +77,16 @@ async function openComposeByUrn(page: Page, messagingUrn: string): Promise<boole
 }
 
 async function sendMessageViaTypeahead(page: Page, fullName: string, text: string): Promise<void> {
+=======
+
+/**
+ * Sends a message to a LinkedIn 1st-degree connection.
+ * Strategy: navigate to /messaging/thread/new/, search by full name,
+ * select the first result, paste message, click send.
+ * This works regardless of whether the linkedin_url is a Sales Nav or /in/ URL.
+ */
+export async function sendMessage(page: Page, fullName: string, text: string): Promise<void> {
+>>>>>>> c5cc6f0 (release: 2026-07-15)
   await page.goto("https://www.linkedin.com/messaging/thread/new/", {
     waitUntil: "domcontentloaded",
     timeout: 30000,
@@ -89,6 +100,7 @@ async function sendMessageViaTypeahead(page: Page, fullName: string, text: strin
   await searchField.type(fullName, { delay: 60 + Math.random() * 40 });
   await page.waitForTimeout(1500);
 
+<<<<<<< HEAD
   // Select first result — but verify it's actually the intended person first.
   // This search only returns 1st-degree connections; if the real target isn't
   // connected, LinkedIn will still happily return a same/similar-named
@@ -116,6 +128,14 @@ function resultNameMatches(resultText: string, fullName: string): boolean {
 }
 
 async function sendFromComposeBox(page: Page, text: string): Promise<void> {
+=======
+  // Select first result
+  const firstResult = page.locator('div[class*="msg-connections-typeahead__search-result-row"]').first();
+  await firstResult.waitFor({ timeout: 8000 });
+  await firstResult.click({ delay: 100 });
+  await page.waitForTimeout(800);
+
+>>>>>>> c5cc6f0 (release: 2026-07-15)
   // Paste message into compose area
   const msgInput = page.locator("div.msg-form__contenteditable").first();
   await msgInput.waitFor({ timeout: 8000 });

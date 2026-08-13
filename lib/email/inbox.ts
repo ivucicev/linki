@@ -6,6 +6,7 @@ import { premium } from "@/lib/premium";
 import { decryptSecret } from "@/lib/crypto";
 
 const IMAP_POLL_INTERVAL_MS = 2 * 60 * 60 * 1000; // 2 hours
+<<<<<<< HEAD
 // Jul 2026 incident: all email accounts became "due" in the same tick and synced
 // back-to-back (one 20-account burst ran 3 minutes straight, one account alone took
 // 85s), which lined up with NocoDB/n8n healthcheck failures on the shared host. A
@@ -18,6 +19,8 @@ function accountJitterMs(accountId: string): number {
   for (let i = 0; i < accountId.length; i++) h = (h * 31 + accountId.charCodeAt(i)) >>> 0;
   return h % IMAP_POLL_JITTER_MS;
 }
+=======
+>>>>>>> c5cc6f0 (release: 2026-07-15)
 
 const BOUNCE_SENDER_PATTERNS = [
   /mailer-daemon@/i,
@@ -142,8 +145,12 @@ export function shouldSyncEmailInbox(emailAccountId: string): boolean {
     .prepare("SELECT inbox_synced_at FROM email_accounts WHERE id = ?")
     .get(emailAccountId) as { inbox_synced_at: string | null } | undefined;
   if (!account?.inbox_synced_at) return true;
+<<<<<<< HEAD
   const dueAfterMs = IMAP_POLL_INTERVAL_MS + accountJitterMs(emailAccountId);
   return Date.now() - new Date(account.inbox_synced_at).getTime() >= dueAfterMs;
+=======
+  return Date.now() - new Date(account.inbox_synced_at).getTime() >= IMAP_POLL_INTERVAL_MS;
+>>>>>>> c5cc6f0 (release: 2026-07-15)
 }
 
 /**

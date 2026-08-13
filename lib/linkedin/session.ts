@@ -97,6 +97,7 @@ export async function getSessionContext(accountId: string): Promise<BrowserConte
   }
 }
 
+<<<<<<< HEAD
 // B6 (Jul 2026 CPU-spike incident): closing a Playwright page doesn't mean the
 // underlying Chromium renderer OS process has actually exited — under CPU
 // contention on the 2-vCPU prod box, teardown was observed lagging 60-90s
@@ -158,6 +159,21 @@ export async function getSessionPage(accountId: string): Promise<Page> {
   }) as Page["close"];
 
   return page;
+=======
+/** Returns a new Page from the account's browser context */
+export async function getSessionPage(accountId: string): Promise<Page> {
+  const ctx = await getOrCreateContext(accountId);
+  try {
+    return await ctx.newPage();
+  } catch {
+    // B2: context was dead — CLOSE it before recreating so its underlying
+    // browser process isn't left orphaned, then retry once with a fresh one.
+    try { await ctx.close(); } catch { /* already gone */ }
+    contexts.delete(accountId);
+    const freshCtx = await getOrCreateContext(accountId);
+    return freshCtx.newPage();
+  }
+>>>>>>> c5cc6f0 (release: 2026-07-15)
 }
 
 export async function saveSessionState(accountId: string): Promise<void> {

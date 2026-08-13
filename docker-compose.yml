@@ -31,9 +31,12 @@ services:
       # HEADLESS=true
 
     restart: unless-stopped
+<<<<<<< HEAD
     # Caps Linki's CPU so a busy runner can't starve other containers on a
     # small box. Raise/remove this if you have cores to spare.
     deploy:
       resources:
         limits:
           cpus: "1.5"
+=======
+>>>>>>> c5cc6f0 (release: 2026-07-15)
