@@ -57,6 +57,8 @@ ENV APP_VERSION=$APP_VERSION
 
 RUN npm run build
 
+RUN chown -R node:node /app/.next
+
 # Data directory — mount a volume here to persist the SQLite DB
 RUN mkdir -p /data && chown node:node /data
 ENV LINKI_DB_PATH=/data/linki.db
