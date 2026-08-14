@@ -34,21 +34,22 @@ export async function sendMessage(
   fullName: string,
   text: string,
   linkedinUrl: string,
-  messagingUrn?: string | null
+  messagingUrn?: string | null,
+  targetId?: string,
 ): Promise<SendMessageResult> {
   if (messagingUrn) {
-    const opened = await openComposeByUrn(page, messagingUrn);
+    const opened = await openComposeByUrn(page, messagingUrn, targetId);
     if (opened) {
-      await sendFromComposeBox(page, text);
+      await sendFromComposeBox(page, text, targetId);
       return { messagingUrn, isFirstDegree: true };
     }
   }
 
-  const resolved = await visitProfile(page, linkedinUrl);
+  const resolved = await visitProfile(page, linkedinUrl, targetId);
   if (resolved.messagingUrn) {
-    const opened = await openComposeByUrn(page, resolved.messagingUrn);
+    const opened = await openComposeByUrn(page, resolved.messagingUrn, targetId);
     if (opened) {
-      await sendFromComposeBox(page, text);
+      await sendFromComposeBox(page, text, targetId);
       return resolved;
     }
   }
@@ -58,27 +59,27 @@ export async function sendMessage(
 
   // Connected, but no message link could be resolved live (unusual layout) —
   // last-resort fallback to name search.
-  await sendMessageViaTypeahead(page, fullName, text);
+  await sendMessageViaTypeahead(page, fullName, text, targetId);
   return resolved;
 }
 
-async function openComposeByUrn(page: Page, messagingUrn: string): Promise<boolean> {
+async function openComposeByUrn(page: Page, messagingUrn: string, targetId?: string): Promise<boolean> {
   try {
     const recipientId = messagingUrn.split(":").pop();
     const composeUrl = `https://www.linkedin.com/messaging/compose/?profileUrn=${encodeURIComponent(messagingUrn)}&recipient=${recipientId}&interop=msgOverlay`;
     await page.goto(composeUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
     await page.waitForTimeout(1500 + Math.random() * 1000);
-    await saveScreenshot(page, "compose_opened");
+    await saveScreenshot(page, "compose_opened", targetId);
     const msgInput = page.locator("div.msg-form__contenteditable").first();
     await msgInput.waitFor({ timeout: 8000 });
     return true;
   } catch {
-    await saveScreenshot(page, "compose_failed");
+    await saveScreenshot(page, "compose_failed", targetId);
     return false;
   }
 }
 
-async function sendMessageViaTypeahead(page: Page, fullName: string, text: string): Promise<void> {
+async function sendMessageViaTypeahead(page: Page, fullName: string, text: string, targetId?: string): Promise<void> {
   await page.goto("https://www.linkedin.com/messaging/thread/new/", {
     waitUntil: "domcontentloaded",
     timeout: 30000,
@@ -107,7 +108,7 @@ async function sendMessageViaTypeahead(page: Page, fullName: string, text: strin
   await firstResult.click({ delay: 100 });
   await page.waitForTimeout(800);
 
-  await sendFromComposeBox(page, text);
+  await sendFromComposeBox(page, text, targetId);
 }
 
 function resultNameMatches(resultText: string, fullName: string): boolean {
@@ -118,7 +119,7 @@ function resultNameMatches(resultText: string, fullName: string): boolean {
   return normalize(resultText).includes(target);
 }
 
-async function sendFromComposeBox(page: Page, text: string): Promise<void> {
+async function sendFromComposeBox(page: Page, text: string, targetId?: string): Promise<void> {
   // Paste message into compose area
   const msgInput = page.locator("div.msg-form__contenteditable").first();
   await msgInput.waitFor({ timeout: 8000 });
@@ -132,7 +133,7 @@ async function sendFromComposeBox(page: Page, text: string): Promise<void> {
     await msgInput.pressSequentially(text, { delay: 20 });
   }
   await page.waitForTimeout(500);
-  await saveScreenshot(page, "message_typed");
+  await saveScreenshot(page, "message_typed", targetId);
 
   // Send — wait up to 6s for any known send button variant, fall back to Ctrl+Enter
   const sendBtn = page.locator([
@@ -146,11 +147,11 @@ async function sendFromComposeBox(page: Page, text: string): Promise<void> {
     await sendBtn.waitFor({ state: "visible", timeout: 6000 });
     await sendBtn.click({ delay: 100 });
   } catch {
-    await saveScreenshot(page, "send_btn_not_found");
+    await saveScreenshot(page, "send_btn_not_found", targetId);
     // Button not found — Ctrl+Enter is LinkedIn's keyboard send shortcut
     await msgInput.focus();
     await msgInput.press("Control+Enter");
   }
   await page.waitForTimeout(2000);
-  await saveScreenshot(page, "after_send");
+  await saveScreenshot(page, "after_send", targetId);
 }

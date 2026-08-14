@@ -31,10 +31,10 @@ import { saveScreenshot } from "./screenshot";
  * needed to message this person directly later without a name-search typeahead
  * — see lib/linkedin/message.ts. Returned as messagingUrn when found.
  */
-export async function visitProfile(page: Page, linkedinUrl: string): Promise<{ isFirstDegree: boolean; messagingUrn: string | null }> {
+export async function visitProfile(page: Page, linkedinUrl: string, targetId?: string): Promise<{ isFirstDegree: boolean; messagingUrn: string | null }> {
   await page.goto(linkedinUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
   await page.waitForTimeout(3000 + Math.random() * 2000);
-  await saveScreenshot(page, "visit_profile");
+  await saveScreenshot(page, "visit_profile", targetId);
 
   const topCard = page.locator("main section").filter({ has: page.locator("h1, h2") }).first();
 

@@ -24,24 +24,26 @@ function purgeOld() {
   } catch { /* ignore */ }
 }
 
-export async function saveScreenshot(page: Page, label: string): Promise<void> {
+export async function saveScreenshot(page: Page, label: string, targetId?: string): Promise<void> {
   try {
     ensureDir();
     purgeOld();
     const safe = label.replace(/[^a-z0-9_-]/gi, "_").slice(0, 60);
-    const filename = `${Date.now()}-${safe}.png`;
+    const tid = targetId ? `${targetId}-` : "";
+    const filename = `${Date.now()}-${tid}${safe}.png`;
     await page.screenshot({ path: path.join(DIR, filename), fullPage: false });
   } catch { /* never throw — screenshots are best-effort */ }
 }
 
-export function listScreenshots(): Array<{ filename: string; url: string; ts: number; label: string }> {
+export function listScreenshots(targetId?: string): Array<{ filename: string; url: string; ts: number; label: string }> {
   try {
     ensureDir();
     return fs.readdirSync(DIR)
       .filter((f) => f.endsWith(".png"))
+      .filter((f) => !targetId || f.includes(targetId))
       .map((f) => {
         const ts = parseInt(f.split("-")[0], 10);
-        const label = f.replace(/^\d+-/, "").replace(/\.png$/, "").replace(/_/g, " ");
+        const label = f.replace(/^\d+-/, "").replace(/[a-f0-9-]{36}-/, "").replace(/\.png$/, "").replace(/_/g, " ");
         return { filename: f, url: `/screenshots/${f}`, ts, label };
       })
       .sort((a, b) => b.ts - a.ts)

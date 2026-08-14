@@ -504,7 +504,7 @@ async function executeStep(
       const linkedinUrl = await getLinkedinUrl(db, target, accountId);
       const page = await getSessionPage(accountId);
       let visitResult: { isFirstDegree: boolean; messagingUrn: string | null };
-      try { visitResult = await visitProfile(page, linkedinUrl); } finally { await page.close(); }
+      try { visitResult = await visitProfile(page, linkedinUrl, target.id); } finally { await page.close(); }
       await saveSessionState(accountId);
       if (visitResult.isFirstDegree && target.degree !== 1) {
         db.prepare("UPDATE targets SET degree = 1, connected_at = COALESCE(connected_at, ?) WHERE id = ?").run(nowIso(), target.id);
@@ -636,7 +636,7 @@ async function executeStep(
       const page = await getSessionPage(accountId);
       try {
         if (!target.full_name) throw new Error(`Target ${target.id} has no full_name — cannot search messaging`);
-        const result = await sendMessage(page, target.full_name, messageText, messageLinkedinUrl, freshTarget.messaging_urn);
+        const result = await sendMessage(page, target.full_name, messageText, messageLinkedinUrl, freshTarget.messaging_urn, target.id);
         if (result.messagingUrn) {
           db.prepare("UPDATE targets SET messaging_urn = COALESCE(messaging_urn, ?) WHERE id = ?").run(result.messagingUrn, target.id);
         }

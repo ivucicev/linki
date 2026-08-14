@@ -581,6 +581,19 @@ export default function ContactDetailPage({
   const [degree, setDegree] = useState(target.degree);
   const [connectedAt, setConnectedAt] = useState(target.connected_at);
 
+  const [screenshots, setScreenshots] = useState<Array<{ filename: string; url: string; ts: number; label: string }>>([]);
+  const [screenshotModal, setScreenshotModal] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      const res = await fetch(`/api/screenshots?targetId=${target.id}`);
+      if (res.ok && !cancelled) setScreenshots(await res.json());
+    }
+    load();
+    const iv = setInterval(load, 8000);
+    return () => { cancelled = true; clearInterval(iv); };
+  }, [target.id]);
+
   const [memberLists, setMemberLists] = useState<ListRef[]>(target.lists);
   const [showAddList, setShowAddList] = useState(false);
   const [addListId, setAddListId] = useState("");
@@ -749,6 +762,16 @@ export default function ContactDetailPage({
           onClose={() => setSelectedLog(null)}
           onSave={(updated) => { setActivityLogs((prev) => prev.map((l) => l.id === updated.id ? updated : l)); setSelectedLog(null); toast.success("Saved"); }}
         />
+      )}
+      {screenshotModal && (
+        <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4" onClick={() => setScreenshotModal(null)}>
+          <div className="max-w-4xl w-full" onClick={(e) => e.stopPropagation()}>
+            <div className="flex justify-end mb-2">
+              <button onClick={() => setScreenshotModal(null)} className="text-white/50 hover:text-white text-2xl leading-none">×</button>
+            </div>
+            <img src={screenshotModal} alt="Screenshot" className="w-full rounded-xl" />
+          </div>
+        </div>
       )}
       <div>
         {/* Back */}
@@ -1347,6 +1370,23 @@ export default function ContactDetailPage({
                   </div>
                 );
               })}
+            </div>
+          </div>
+        )}
+
+        {screenshots.length > 0 && (
+          <div className="bg-base-200 border border-base-300/50 rounded-xl p-5 mb-4">
+            <h3 className="text-xs font-semibold text-base-content/50 uppercase tracking-wide mb-3">Runner Screenshots</h3>
+            <div className="grid grid-cols-2 gap-2">
+              {screenshots.slice(0, 6).map((s) => (
+                <button key={s.filename} onClick={() => setScreenshotModal(s.url)} className="group relative rounded-lg overflow-hidden border border-base-300/50 hover:border-primary/40 transition-colors text-left">
+                  <img src={s.url} alt={s.label} className="w-full aspect-video object-cover object-top" />
+                  <div className="px-1.5 py-1">
+                    <p className="text-[10px] font-medium text-base-content/60 truncate">{s.label}</p>
+                    <p className="text-[10px] text-base-content/30">{new Date(s.ts).toLocaleTimeString()}</p>
+                  </div>
+                </button>
+              ))}
             </div>
           </div>
         )}
