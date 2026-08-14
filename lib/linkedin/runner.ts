@@ -892,11 +892,13 @@ async function executeStep(
       }
 
       // Step-level signature takes precedence; null means fall back to email account default
-      const sig = (step.email_signature !== null ? step.email_signature : emailAccount.signature)?.trim();
-      const finalEmailBody = sig ? `${emailBody}\n\n--\n${sig}` : emailBody;
+      const sig = (step.email_signature !== null ? step.email_signature : emailAccount.signature)?.trim() ?? null;
+      const isHtmlSig = sig ? /<[a-z][\s\S]*>/i.test(sig) : false;
+      // For plain-text signatures, append inline; for HTML signatures pass separately so sendEmail builds a proper HTML email
+      const finalEmailBody = (sig && !isHtmlSig) ? `${emailBody}\n\n--\n${sig}` : emailBody;
       db.prepare("UPDATE run_profile_tracks SET last_step_at = datetime('now') WHERE id = ?").run(tr.id);
       log(db, runId, target.id, "info", `Sending email to ${name} <${freshTarget.email}>`);
-      await sendEmail({ ...emailAccount, password: decryptSecret(emailAccount.password)! }, freshTarget.email, emailSubject, finalEmailBody);
+      await sendEmail({ ...emailAccount, password: decryptSecret(emailAccount.password)! }, freshTarget.email, emailSubject, finalEmailBody, isHtmlSig ? sig : null);
       trRecordContext(db, tr, { emailSubject, emailBody });
       trAdvance(db, tr, steps);
       log(db, runId, target.id, "info", `Email sent to ${name}`);

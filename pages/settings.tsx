@@ -13,6 +13,7 @@ import {
   RiLockLine, RiLockUnlockLine, RiFlashlightLine, RiArrowDownSLine, RiCompassLine,
 } from "react-icons/ri";
 import { ALL_TOUR_PAGES, TOUR_PAGE_LABELS, replayPageTour, type TourPage } from "@/lib/tour";
+import RichTextEditor from "@/components/RichTextEditor";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -1249,11 +1250,10 @@ function EmailTab({ initialAccounts }: { initialAccounts: EmailAccount[] }) {
                 <p className="text-xs text-base-content/35 mb-2">
                   Appended to outgoing emails. If empty, nothing is added — no separator line, nothing.
                 </p>
-                <textarea
-                  className="textarea textarea-bordered w-full bg-base-300/50 text-sm h-24 resize-none font-mono"
-                  placeholder={"John Smith\nHead of Sales · Acme Corp\njohn@acme.com"}
+                <RichTextEditor
                   value={form.signature}
-                  onChange={(e) => setForm({ ...form, signature: e.target.value })}
+                  onChange={(html) => setForm({ ...form, signature: html })}
+                  placeholder="John Smith · Head of Sales · Acme Corp"
                 />
               </div>
 
