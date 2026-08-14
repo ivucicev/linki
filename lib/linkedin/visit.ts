@@ -34,7 +34,7 @@ export async function visitProfile(page: Page, linkedinUrl: string): Promise<{ i
   await page.goto(linkedinUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
   await page.waitForTimeout(3000 + Math.random() * 2000);
 
-  const topCard = page.locator("main section").filter({ has: page.locator("h1") }).first();
+  const topCard = page.locator("main section").filter({ has: page.locator("h1, h2") }).first();
 
   const messageLink = topCard.locator('a[href*="/messaging/compose"]').first();
   const messageHref = (await messageLink.count()) > 0 ? await messageLink.getAttribute("href").catch(() => null) : null;
