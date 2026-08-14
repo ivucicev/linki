@@ -2,7 +2,12 @@ import fs from "fs";
 import path from "path";
 import type { Page } from "playwright";
 
-const DIR = path.join(process.cwd(), "public", "screenshots");
+// Save alongside the DB volume (/data/screenshots) so files survive container restarts
+// and are writable by the node user. Falls back to public/screenshots for local dev.
+const DATA_DIR = process.env.LINKI_DB_PATH
+  ? path.dirname(process.env.LINKI_DB_PATH)
+  : path.join(process.cwd(), "public");
+const DIR = path.join(DATA_DIR, "screenshots");
 const MAX_AGE_MS = 48 * 60 * 60 * 1000;
 const MAX_FILES = 200;
 
@@ -44,7 +49,7 @@ export function listScreenshots(targetId?: string): Array<{ filename: string; ur
       .map((f) => {
         const ts = parseInt(f.split("-")[0], 10);
         const label = f.replace(/^\d+-/, "").replace(/[a-f0-9-]{36}-/, "").replace(/\.png$/, "").replace(/_/g, " ");
-        return { filename: f, url: `/screenshots/${f}`, ts, label };
+        return { filename: f, url: `/api/screenshots/${f}`, ts, label };
       })
       .sort((a, b) => b.ts - a.ts)
       .slice(0, MAX_FILES);
