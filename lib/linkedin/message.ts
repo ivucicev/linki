@@ -130,9 +130,15 @@ async function sendFromComposeBox(page: Page, text: string): Promise<void> {
   }
   await page.waitForTimeout(500);
 
-  // Send
-  const sendBtn = page.locator("button.msg-form__send-button:visible").first();
-  await sendBtn.waitFor({ timeout: 5000 });
+  // Send — try legacy class first, then aria-label, then any submit button in the form footer
+  const sendBtn = page.locator([
+    "button.msg-form__send-button",
+    "button[aria-label='Send']",
+    "button[aria-label*='Send']",
+    ".msg-form__footer button[type='submit']",
+    ".msg-form__right-actions button",
+  ].join(", ")).first();
+  await sendBtn.waitFor({ state: "visible", timeout: 8000 });
   await sendBtn.click({ delay: 100 });
   await page.waitForTimeout(2000);
 }
