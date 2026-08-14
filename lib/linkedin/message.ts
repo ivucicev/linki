@@ -64,7 +64,7 @@ export async function sendMessage(
 async function openComposeByUrn(page: Page, messagingUrn: string): Promise<boolean> {
   try {
     const recipientId = messagingUrn.split(":").pop();
-    const composeUrl = `https://www.linkedin.com/messaging/compose/?profileUrn=${encodeURIComponent(messagingUrn)}&recipient=${recipientId}`;
+    const composeUrl = `https://www.linkedin.com/messaging/compose/?profileUrn=${encodeURIComponent(messagingUrn)}&recipient=${recipientId}&interop=msgOverlay`;
     await page.goto(composeUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
     await page.waitForTimeout(1500 + Math.random() * 1000);
     const msgInput = page.locator("div.msg-form__contenteditable").first();
@@ -130,7 +130,7 @@ async function sendFromComposeBox(page: Page, text: string): Promise<void> {
   }
   await page.waitForTimeout(500);
 
-  // Send — try legacy class first, then aria-label, then any submit button in the form footer
+  // Send — try class-based selectors first, then Ctrl+Enter keyboard shortcut as fallback
   const sendBtn = page.locator([
     "button.msg-form__send-button",
     "button[aria-label='Send']",
@@ -138,7 +138,12 @@ async function sendFromComposeBox(page: Page, text: string): Promise<void> {
     ".msg-form__footer button[type='submit']",
     ".msg-form__right-actions button",
   ].join(", ")).first();
-  await sendBtn.waitFor({ state: "visible", timeout: 8000 });
-  await sendBtn.click({ delay: 100 });
+  const btnVisible = await sendBtn.isVisible().catch(() => false);
+  if (btnVisible) {
+    await sendBtn.click({ delay: 100 });
+  } else {
+    // Overlay compose or changed layout — Ctrl+Enter is LinkedIn's universal send shortcut
+    await msgInput.press("Control+Enter");
+  }
   await page.waitForTimeout(2000);
 }
