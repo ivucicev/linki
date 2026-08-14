@@ -130,7 +130,7 @@ async function sendFromComposeBox(page: Page, text: string): Promise<void> {
   }
   await page.waitForTimeout(500);
 
-  // Send — try class-based selectors first, then Ctrl+Enter keyboard shortcut as fallback
+  // Send — wait up to 6s for any known send button variant, fall back to Ctrl+Enter
   const sendBtn = page.locator([
     "button.msg-form__send-button",
     "button[aria-label='Send']",
@@ -138,11 +138,12 @@ async function sendFromComposeBox(page: Page, text: string): Promise<void> {
     ".msg-form__footer button[type='submit']",
     ".msg-form__right-actions button",
   ].join(", ")).first();
-  const btnVisible = await sendBtn.isVisible().catch(() => false);
-  if (btnVisible) {
+  try {
+    await sendBtn.waitFor({ state: "visible", timeout: 6000 });
     await sendBtn.click({ delay: 100 });
-  } else {
-    // Overlay compose or changed layout — Ctrl+Enter is LinkedIn's universal send shortcut
+  } catch {
+    // Button not found — Ctrl+Enter is LinkedIn's keyboard send shortcut
+    await msgInput.focus();
     await msgInput.press("Control+Enter");
   }
   await page.waitForTimeout(2000);
