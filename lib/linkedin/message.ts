@@ -1,5 +1,6 @@
 import type { Page } from "playwright";
 import { visitProfile } from "./visit";
+import { saveScreenshot } from "./screenshot";
 
 export class NotConnectedError extends Error {}
 
@@ -67,10 +68,12 @@ async function openComposeByUrn(page: Page, messagingUrn: string): Promise<boole
     const composeUrl = `https://www.linkedin.com/messaging/compose/?profileUrn=${encodeURIComponent(messagingUrn)}&recipient=${recipientId}&interop=msgOverlay`;
     await page.goto(composeUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
     await page.waitForTimeout(1500 + Math.random() * 1000);
+    await saveScreenshot(page, "compose_opened");
     const msgInput = page.locator("div.msg-form__contenteditable").first();
     await msgInput.waitFor({ timeout: 8000 });
     return true;
   } catch {
+    await saveScreenshot(page, "compose_failed");
     return false;
   }
 }
@@ -129,6 +132,7 @@ async function sendFromComposeBox(page: Page, text: string): Promise<void> {
     await msgInput.pressSequentially(text, { delay: 20 });
   }
   await page.waitForTimeout(500);
+  await saveScreenshot(page, "message_typed");
 
   // Send — wait up to 6s for any known send button variant, fall back to Ctrl+Enter
   const sendBtn = page.locator([
@@ -142,9 +146,11 @@ async function sendFromComposeBox(page: Page, text: string): Promise<void> {
     await sendBtn.waitFor({ state: "visible", timeout: 6000 });
     await sendBtn.click({ delay: 100 });
   } catch {
+    await saveScreenshot(page, "send_btn_not_found");
     // Button not found — Ctrl+Enter is LinkedIn's keyboard send shortcut
     await msgInput.focus();
     await msgInput.press("Control+Enter");
   }
   await page.waitForTimeout(2000);
+  await saveScreenshot(page, "after_send");
 }

@@ -1,4 +1,5 @@
 import type { Page } from "playwright";
+import { saveScreenshot } from "./screenshot";
 
 /**
  * Visits a LinkedIn profile page. This registers as a profile view on LinkedIn.
@@ -33,6 +34,7 @@ import type { Page } from "playwright";
 export async function visitProfile(page: Page, linkedinUrl: string): Promise<{ isFirstDegree: boolean; messagingUrn: string | null }> {
   await page.goto(linkedinUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
   await page.waitForTimeout(3000 + Math.random() * 2000);
+  await saveScreenshot(page, "visit_profile");
 
   const topCard = page.locator("main section").filter({ has: page.locator("h1, h2") }).first();
 
