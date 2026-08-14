@@ -6,7 +6,7 @@ import { getDb } from "@/lib/db";
 import { toast } from "sonner";
 import {
   RiArrowLeftLine, RiExternalLinkLine, RiMailLine, RiBuilding2Line,
-  RiUserFollowLine, RiUserAddLine, RiMapPinLine, RiBriefcaseLine,
+  RiUserFollowLine, RiUserAddLine, RiUserUnfollowLine, RiMapPinLine, RiBriefcaseLine,
   RiTimeLine, RiGlobalLine, RiLinkedinBoxLine, RiCheckboxCircleLine,
   RiEditLine, RiCheckLine, RiCloseLine, RiFlowChart,
   RiCheckboxBlankCircleLine, RiDeleteBinLine, RiCalendarLine,
@@ -723,6 +723,17 @@ export default function ContactDetailPage({
     }
   }
 
+  async function markAsNotConnected() {
+    const res = await fetch(`/api/targets/${target.id}/mark-not-connected`, { method: "POST" });
+    if (res.ok) {
+      setDegree(null);
+      setConnectedAt(null);
+      toast.success("Marked as not connected");
+    } else {
+      toast.error("Failed to update");
+    }
+  }
+
   const connectionStatus = degree === 1
     ? { label: "Connected", color: "bg-success/15 text-success" }
     : target.connection_requested_at
@@ -803,6 +814,15 @@ export default function ContactDetailPage({
                     className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium text-base-content/40 border border-base-300/50 hover:border-success/40 hover:text-success hover:bg-success/5 transition-colors"
                   >
                     <RiUserFollowLine size={11} /> Mark as connected
+                  </button>
+                )}
+                {degree === 1 && (
+                  <button
+                    onClick={markAsNotConnected}
+                    title="Reset connection status"
+                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium text-base-content/40 border border-base-300/50 hover:border-error/40 hover:text-error hover:bg-error/5 transition-colors"
+                  >
+                    <RiUserUnfollowLine size={11} /> Mark as not connected
                   </button>
                 )}
                 {target.email && (
