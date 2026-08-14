@@ -38,13 +38,18 @@ export async function visitProfile(page: Page, linkedinUrl: string, targetId?: s
 
   const topCard = page.locator("main section").filter({ has: page.locator("h1, h2") }).first();
 
+  // Degree is determined by the badge text only — the Message link alone is not
+  // sufficient because LinkedIn also shows an InMail link (same /messaging/compose
+  // href) for 2nd/3rd-degree profiles. Only 1st-degree cards show the "1st" badge.
+  const pageText = await topCard.innerText().catch(() => "");
+  const isFirstDegree = /\b1st\b/.test(pageText);
+
+  // Extract messagingUrn for direct messaging (only useful if actually 1st-degree,
+  // but we capture it regardless so it's available if degree status changes later).
   const messageLink = topCard.locator('a[href*="/messaging/compose"]').first();
   const messageHref = (await messageLink.count()) > 0 ? await messageLink.getAttribute("href").catch(() => null) : null;
   const urnMatch = messageHref?.match(/profileUrn=([^&]+)/);
   const messagingUrn = urnMatch ? decodeURIComponent(urnMatch[1]) : null;
 
-  if (messageHref) return { isFirstDegree: true, messagingUrn };
-
-  const pageText = await topCard.innerText().catch(() => "");
-  return { isFirstDegree: /\b1st\b/.test(pageText), messagingUrn: null };
+  return { isFirstDegree, messagingUrn };
 }
