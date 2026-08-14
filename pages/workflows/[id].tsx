@@ -32,6 +32,7 @@ import {
   RiArrowDownSLine,
   RiRefreshLine,
   RiErrorWarningLine,
+  RiFlashlightLine,
 } from "react-icons/ri";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -2794,6 +2795,23 @@ export default function WorkflowDetailPage({
     }
   }
 
+  async function expediteProspect(runId: string, targetId: string) {
+    const res = await fetch(`/api/runs/${runId}/expedite`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ target_ids: [targetId] }),
+    });
+    if (res.ok) {
+      toast.success("Executing next action now");
+      setProspects((prev) =>
+        prev.map((p) => p.target_id === targetId ? { ...p, next_step_at: new Date().toISOString() } : p)
+      );
+    } else {
+      const err = await res.json();
+      toast.error(err.error ?? "Failed to expedite");
+    }
+  }
+
   async function removeProspect(runId: string, targetId: string) {
     const res = await fetch(`/api/runs/${runId}/remove`, {
       method: "POST",
@@ -2812,7 +2830,7 @@ export default function WorkflowDetailPage({
   }
 
   // Group target_ids by run_id, then fire one request per run
-  async function bulkAction(action: "retry" | "remove" | "unenroll", targetIds: string[]) {
+  async function bulkAction(action: "retry" | "remove" | "unenroll" | "expedite", targetIds: string[]) {
     const grouped: Record<string, string[]> = {};
     for (const tid of targetIds) {
       const p = prospects.find((x) => x.target_id === tid);
@@ -2849,6 +2867,10 @@ export default function WorkflowDetailPage({
     if (action === "retry") {
       toast.success(`Retried ${targetIds.length} prospect${targetIds.length !== 1 ? "s" : ""}`);
       setProspects((prev) => prev.map((p) => targetIds.includes(p.target_id) ? { ...p, state: "in_progress", error_message: null } : p));
+    } else if (action === "expedite") {
+      toast.success(`Executing next action now for ${targetIds.length} prospect${targetIds.length !== 1 ? "s" : ""}`);
+      const now = new Date().toISOString();
+      setProspects((prev) => prev.map((p) => targetIds.includes(p.target_id) ? { ...p, next_step_at: now } : p));
     } else {
       toast.success(`${action === "remove" ? "Removed" : "Unenrolled"} ${targetIds.length} prospect${targetIds.length !== 1 ? "s" : ""}`);
       setProspects((prev) => prev.filter((p) => !targetIds.includes(p.target_id)));
@@ -3176,6 +3198,7 @@ export default function WorkflowDetailPage({
                   const sel = prospects.filter((p) => selected.has(p.target_id));
                   const failedSel = sel.filter((p) => p.state === "failed");
                   const unenrollSel = sel.filter((p) => isActive && (p.state === "pending" || p.state === "in_progress"));
+                  const expediteSel = sel.filter((p) => isActive && p.state === "in_progress" && p.next_step_at !== null && new Date(p.next_step_at) > new Date());
                   const removeSel = sel.filter((p) => p.state !== "completed");
                   return (
                     <div className="absolute inset-0 flex items-center gap-2 px-3 bg-base-200 border border-base-300/50 rounded-lg z-10">
@@ -3186,6 +3209,14 @@ export default function WorkflowDetailPage({
                           onClick={() => bulkAction("retry", failedSel.map((p) => p.target_id))}
                         >
                           <RiRefreshLine size={12} /> Retry {failedSel.length} failed
+                        </button>
+                      )}
+                      {expediteSel.length > 0 && (
+                        <button
+                          className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-medium bg-success/10 text-success border border-success/20 hover:bg-success/20 transition-colors"
+                          onClick={() => bulkAction("expedite", expediteSel.map((p) => p.target_id))}
+                        >
+                          <RiFlashlightLine size={12} /> Execute now {expediteSel.length}
                         </button>
                       )}
                       {unenrollSel.length > 0 && (
@@ -3308,6 +3339,15 @@ export default function WorkflowDetailPage({
                         </td>
                         <td onClick={(e) => e.stopPropagation()}>
                           <div className="flex items-center gap-0.5">
+                            {isActive && p.state === "in_progress" && p.next_step_at !== null && new Date(p.next_step_at) > new Date() && (
+                              <button
+                                title="Execute next action now"
+                                onClick={() => expediteProspect(p.run_id, p.target_id)}
+                                className="inline-flex items-center p-1 rounded text-base-content/20 hover:text-success hover:bg-success/10 transition-colors"
+                              >
+                                <RiFlashlightLine size={13} />
+                              </button>
+                            )}
                             {p.state === "failed" && (
                               <button
                                 title="Retry"
