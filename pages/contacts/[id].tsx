@@ -578,6 +578,9 @@ export default function ContactDetailPage({
   const [editingNotes, setEditingNotes] = useState(false);
   const [notesDraft, setNotesDraft] = useState(target.notes ?? "");
 
+  const [degree, setDegree] = useState(target.degree);
+  const [connectedAt, setConnectedAt] = useState(target.connected_at);
+
   const [memberLists, setMemberLists] = useState<ListRef[]>(target.lists);
   const [showAddList, setShowAddList] = useState(false);
   const [addListId, setAddListId] = useState("");
@@ -695,7 +698,19 @@ export default function ContactDetailPage({
     toast.success("Notes saved");
   }
 
-  const connectionStatus = target.degree === 1
+  async function markAsConnected() {
+    const res = await fetch(`/api/targets/${target.id}/mark-connected`, { method: "POST" });
+    if (res.ok) {
+      const d = await res.json();
+      setDegree(1);
+      setConnectedAt((prev) => prev ?? d.connected_at);
+      toast.success("Marked as connected");
+    } else {
+      toast.error("Failed to update");
+    }
+  }
+
+  const connectionStatus = degree === 1
     ? { label: "Connected", color: "bg-success/15 text-success" }
     : target.connection_requested_at
     ? { label: "Requested", color: "bg-warning/15 text-warning" }
@@ -755,9 +770,18 @@ export default function ContactDetailPage({
               )}
               <div className="flex flex-wrap items-center gap-2 mt-3">
                 <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium ${connectionStatus.color}`}>
-                  {target.degree === 1 ? <RiUserFollowLine size={11} /> : target.connection_requested_at ? <RiUserAddLine size={11} /> : null}
+                  {degree === 1 ? <RiUserFollowLine size={11} /> : target.connection_requested_at ? <RiUserAddLine size={11} /> : null}
                   {connectionStatus.label}
                 </span>
+                {degree !== 1 && (
+                  <button
+                    onClick={markAsConnected}
+                    title="Mark as 1st-degree connection"
+                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium text-base-content/40 border border-base-300/50 hover:border-success/40 hover:text-success hover:bg-success/5 transition-colors"
+                  >
+                    <RiUserFollowLine size={11} /> Mark as connected
+                  </button>
+                )}
                 {target.email && (
                   target.email_status === "invalid" ? (
                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium bg-error/15 text-error">
@@ -1117,7 +1141,7 @@ export default function ContactDetailPage({
           <div className="flex flex-col gap-3">
             <Field label="Added" value={formatDate(target.created_at)} />
             <Field label="Connection requested" value={formatDate(target.connection_requested_at)} />
-            <Field label="Connected" value={formatDate(target.connected_at)} />
+            <Field label="Connected" value={formatDate(connectedAt)} />
             <Field label="Message sent" value={formatDate(target.message_sent_at)} />
             <Field label="Last reply" value={formatDate(target.last_replied_at)} />
             <Field label="Apollo enriched" value={formatDate(target.apollo_enriched_at)} />
