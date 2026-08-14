@@ -5,10 +5,16 @@ import Link from "@tiptap/extension-link";
 import Underline from "@tiptap/extension-underline";
 import { TextStyle } from "@tiptap/extension-text-style";
 import { Color } from "@tiptap/extension-color";
+import { Table } from "@tiptap/extension-table";
+import { TableRow } from "@tiptap/extension-table-row";
+import { TableCell } from "@tiptap/extension-table-cell";
+import { TableHeader } from "@tiptap/extension-table-header";
 import { useEffect, useRef } from "react";
 import {
   RiBold, RiItalic, RiUnderline, RiLink, RiImageLine,
-  RiListUnordered, RiListOrdered, RiFormatClear,
+  RiListUnordered, RiListOrdered, RiFormatClear, RiTable2,
+  RiInsertRowBottom, RiInsertRowTop, RiInsertColumnLeft, RiInsertColumnRight,
+  RiDeleteRow, RiDeleteColumn,
 } from "react-icons/ri";
 
 interface Props {
@@ -29,6 +35,10 @@ export default function RichTextEditor({ value, onChange, placeholder, className
       Color,
       Image.configure({ inline: true, allowBase64: true }),
       Link.configure({ openOnClick: false, HTMLAttributes: { rel: "noopener noreferrer" } }),
+      Table.configure({ resizable: false }),
+      TableRow,
+      TableCell,
+      TableHeader,
     ],
     content: value,
     onUpdate: ({ editor }) => onChange(editor.getHTML()),
@@ -40,7 +50,6 @@ export default function RichTextEditor({ value, onChange, placeholder, className
     },
   });
 
-  // Sync external value changes (e.g. switching accounts)
   useEffect(() => {
     if (!editor) return;
     if (!initialized.current) { initialized.current = true; return; }
@@ -55,25 +64,19 @@ export default function RichTextEditor({ value, onChange, placeholder, className
     editor?.chain().focus().setLink({ href: url }).run();
   }
 
-  function addImage() {
-    const url = window.prompt("Image URL (or paste a data: URI)");
-    if (!url) return;
-    editor?.chain().focus().setImage({ src: url }).run();
-  }
-
   function uploadImage(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
     reader.onload = () => {
-      const src = reader.result as string;
-      editor?.chain().focus().setImage({ src }).run();
+      editor?.chain().focus().setImage({ src: reader.result as string }).run();
     };
     reader.readAsDataURL(file);
     e.target.value = "";
   }
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const inTable = editor?.isActive("table");
 
   if (!editor) return null;
 
@@ -105,6 +108,26 @@ export default function RichTextEditor({ value, onChange, placeholder, className
           <RiListOrdered size={13} />
         </ToolBtn>
         <div className="w-px h-4 bg-base-300/70 mx-1" />
+        {/* Table insert / controls */}
+        {!inTable ? (
+          <ToolBtn
+            onClick={() => editor.chain().focus().insertTable({ rows: 2, cols: 2, withHeaderRow: false }).run()}
+            title="Insert table"
+          >
+            <RiTable2 size={13} />
+          </ToolBtn>
+        ) : (
+          <>
+            <ToolBtn onClick={() => editor.chain().focus().addRowBefore().run()} title="Add row above"><RiInsertRowTop size={13} /></ToolBtn>
+            <ToolBtn onClick={() => editor.chain().focus().addRowAfter().run()} title="Add row below"><RiInsertRowBottom size={13} /></ToolBtn>
+            <ToolBtn onClick={() => editor.chain().focus().addColumnBefore().run()} title="Add column left"><RiInsertColumnLeft size={13} /></ToolBtn>
+            <ToolBtn onClick={() => editor.chain().focus().addColumnAfter().run()} title="Add column right"><RiInsertColumnRight size={13} /></ToolBtn>
+            <ToolBtn onClick={() => editor.chain().focus().deleteRow().run()} title="Delete row"><RiDeleteRow size={13} /></ToolBtn>
+            <ToolBtn onClick={() => editor.chain().focus().deleteColumn().run()} title="Delete column"><RiDeleteColumn size={13} /></ToolBtn>
+            <ToolBtn onClick={() => editor.chain().focus().deleteTable().run()} title="Delete table"><RiTable2 size={13} /></ToolBtn>
+          </>
+        )}
+        <div className="w-px h-4 bg-base-300/70 mx-1" />
         <ToolBtn onClick={() => editor.chain().focus().clearNodes().unsetAllMarks().run()} title="Clear formatting">
           <RiFormatClear size={13} />
         </ToolBtn>
@@ -121,6 +144,10 @@ export default function RichTextEditor({ value, onChange, placeholder, className
         .tiptap a { color: #5aa2ff; text-decoration: underline; }
         .tiptap ul { list-style: disc; padding-left: 1.25rem; }
         .tiptap ol { list-style: decimal; padding-left: 1.25rem; }
+        .tiptap table { border-collapse: collapse; width: 100%; }
+        .tiptap td, .tiptap th { border: 1px solid rgba(255,255,255,0.15); padding: 4px 8px; min-width: 40px; vertical-align: top; }
+        .tiptap th { background: rgba(255,255,255,0.06); font-weight: 600; }
+        .tiptap .selectedCell { background: rgba(90,162,255,0.12); }
         .tiptap [data-placeholder]::before {
           content: attr(data-placeholder);
           color: rgba(255,255,255,0.2);
