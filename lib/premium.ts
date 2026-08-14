@@ -28,6 +28,7 @@ export interface AiSurface {
   writeEmail(params: any): Promise<{ subject: string; body: string }>;
   writeLinkedInMessage(params: any): Promise<{ body: string }>;
   writeSalesInMail(params: any): Promise<{ subject: string; body: string }>;
+  previewMessage(params: any): Promise<{ body: string; subject?: string; inputTokens: number; outputTokens: number; costUsd: number }>;
 }
 
 export interface RepliesSurface {

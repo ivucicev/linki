@@ -438,6 +438,84 @@ export async function writeEmail(params: AnyRecord): Promise<{ subject: string; 
   return { subject, body: body || content.trim() };
 }
 
+export async function previewMessage(params: AnyRecord): Promise<{ body: string; subject?: string; inputTokens: number; outputTokens: number; costUsd: number }> {
+  const {
+    stepType, model, apiKey, targetId, stepPrompt, maxWords, language, campaignPrompt,
+  } = params as {
+    stepType: "message" | "sales_inmail" | "email";
+    model: string; apiKey: string; targetId: string; stepPrompt: string;
+    maxWords?: number | null; language?: string | null; campaignPrompt?: string | null;
+  };
+
+  const contactData = getContactWithCompany(targetId);
+  if (!contactData) throw new Error("Contact not found");
+  const agentConfig = getAgentConfig();
+  const { contact, company } = contactData;
+
+  const wordLimit = maxWords ? `Keep it under ${maxWords} words.` : "";
+  const lang = language && language !== "English" ? `Write in ${language}.` : "";
+
+  let messages: Array<{ role: string; content: string }>;
+  let jsonResponse = false;
+
+  if (stepType === "message") {
+    const sys = [
+      agentConfig.system_prompt?.trim() || "You are an expert B2B sales copywriter specialising in personalised LinkedIn outreach.",
+      "Write messages that feel human and personal — never generic or template-like.",
+      "Do NOT include greetings like 'Hi {{first_name}}' or sign-offs. Return only the message body.",
+    ];
+    const usr: string[] = ["Write a LinkedIn message to the following person.", "", "=== CONTACT INFO ===", buildContactBlock(contact, company)];
+    if (campaignPrompt?.trim()) usr.push("", "=== CAMPAIGN CONTEXT ===", campaignPrompt.trim());
+    if (agentConfig.user_prompt?.trim()) usr.push("", "=== GUIDELINES ===", agentConfig.user_prompt.trim());
+    if (agentConfig.linkedin_examples?.trim()) usr.push("", "=== EXAMPLE MESSAGES ===", agentConfig.linkedin_examples.trim());
+    if (stepPrompt?.trim()) usr.push("", "=== STEP INSTRUCTIONS ===", stepPrompt.trim());
+    usr.push("", [wordLimit, lang, "Return only the message body text."].filter(Boolean).join(" "));
+    messages = [{ role: "system", content: sys.join("\n") }, { role: "user", content: usr.join("\n") }];
+  } else if (stepType === "sales_inmail") {
+    jsonResponse = true;
+    const sys = [
+      agentConfig.system_prompt?.trim() || "You are an expert B2B sales copywriter specialising in LinkedIn Sales Navigator InMails.",
+      "InMails reach non-connections — the subject line is critical to getting opened.",
+      "Write concise, personalised messages that feel human. Avoid generic openers.",
+    ];
+    const usr: string[] = ["Write a LinkedIn Sales Navigator InMail (subject + body) to the following person.", "", "=== CONTACT INFO ===", buildContactBlock(contact, company)];
+    if (campaignPrompt?.trim()) usr.push("", "=== CAMPAIGN CONTEXT ===", campaignPrompt.trim());
+    if (agentConfig.user_prompt?.trim()) usr.push("", "=== GUIDELINES ===", agentConfig.user_prompt.trim());
+    if (agentConfig.linkedin_examples?.trim()) usr.push("", "=== EXAMPLE MESSAGES ===", agentConfig.linkedin_examples.trim());
+    if (stepPrompt?.trim()) usr.push("", "=== STEP INSTRUCTIONS ===", stepPrompt.trim());
+    usr.push("", [wordLimit, lang].filter(Boolean).join(" "));
+    usr.push('Return ONLY valid JSON in this exact format:', '{"subject": "<subject line>", "body": "<message body>"}');
+    messages = [{ role: "system", content: sys.join("\n") }, { role: "user", content: usr.join("\n") }];
+  } else {
+    jsonResponse = true;
+    const sys = [
+      agentConfig.system_prompt?.trim() || "You are an expert B2B cold email copywriter writing personalised outreach emails.",
+      "Emails should be short, specific, and value-focused. Avoid buzzwords and generic openers.",
+      "Do NOT include salutations (Hi/Hello) or sign-offs — the caller handles those.",
+    ];
+    const usr: string[] = ["Write a personalised cold email to the following person.", "", "=== CONTACT INFO ===", buildContactBlock(contact, company)];
+    if (campaignPrompt?.trim()) usr.push("", "=== CAMPAIGN CONTEXT ===", campaignPrompt.trim());
+    if (agentConfig.user_prompt?.trim()) usr.push("", "=== GUIDELINES ===", agentConfig.user_prompt.trim());
+    if (agentConfig.email_examples?.trim()) usr.push("", "=== EXAMPLE EMAILS ===", agentConfig.email_examples.trim());
+    if (stepPrompt?.trim()) usr.push("", "=== STEP INSTRUCTIONS ===", stepPrompt.trim());
+    usr.push("", [wordLimit, lang].filter(Boolean).join(" "));
+    usr.push('Return ONLY valid JSON in this exact format:', '{"subject": "<email subject>", "body": "<email body>"}');
+    messages = [{ role: "system", content: sys.join("\n") }, { role: "user", content: usr.join("\n") }];
+  }
+
+  const { content, inputTokens, outputTokens } = await callOpenRouter(apiKey, model, messages);
+  const costUsd = estimateCost(model, inputTokens, outputTokens);
+
+  if (jsonResponse) {
+    const parsed = parseJsonBlock<{ subject?: string; body?: string }>(content);
+    if (parsed?.body) return { body: parsed.body.trim(), subject: parsed.subject?.trim(), inputTokens, outputTokens, costUsd };
+    const lines = content.trim().split("\n");
+    return { body: lines.slice(1).join("\n").trim() || content.trim(), subject: lines[0].trim(), inputTokens, outputTokens, costUsd };
+  }
+
+  return { body: content.trim(), inputTokens, outputTokens, costUsd };
+}
+
 // Aggregate export satisfying AiSurface
 export const ai: AiSurface = {
   getAgentConfig,
@@ -445,4 +523,5 @@ export const ai: AiSurface = {
   writeEmail,
   writeLinkedInMessage,
   writeSalesInMail,
+  previewMessage,
 };

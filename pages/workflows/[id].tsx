@@ -185,7 +185,7 @@ function getMessageStepLabel(wizardSteps: Array<{ type: string }>, idx: number):
 const AI_LANGUAGES = [
   "English", "Agent decides", "German", "French", "Spanish", "Italian",
   "Portuguese", "Dutch", "Polish", "Swedish", "Danish", "Norwegian",
-  "Finnish", "Arabic", "Japanese", "Chinese", "Korean",
+  "Finnish", "Arabic", "Japanese", "Chinese", "Korean", "Croatian",
 ];
 
 const STEP_COLORS: Record<string, string> = {
