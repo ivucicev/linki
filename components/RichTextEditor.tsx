@@ -9,13 +9,35 @@ import { Table } from "@tiptap/extension-table";
 import { TableRow } from "@tiptap/extension-table-row";
 import { TableCell } from "@tiptap/extension-table-cell";
 import { TableHeader } from "@tiptap/extension-table-header";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   RiBold, RiItalic, RiUnderline, RiLink, RiImageLine,
   RiListUnordered, RiListOrdered, RiFormatClear, RiTable2,
   RiInsertRowBottom, RiInsertRowTop, RiInsertColumnLeft, RiInsertColumnRight,
   RiDeleteRow, RiDeleteColumn,
 } from "react-icons/ri";
+
+// Image with resizable width attribute
+const ResizableImage = Image.extend({
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      width: { default: null, renderHTML: (attrs) => attrs.width ? { width: attrs.width, style: `width:${attrs.width}px` } : {} },
+    };
+  },
+});
+
+// TableCell/Header with no border in HTML output (borders only in editor via CSS)
+const BorderlessCell = TableCell.extend({
+  addAttributes() {
+    return { ...this.parent?.(), style: { default: "border:none;padding:6px 8px;vertical-align:top", renderHTML: (attrs) => ({ style: attrs.style }) } };
+  },
+});
+const BorderlessHeader = TableHeader.extend({
+  addAttributes() {
+    return { ...this.parent?.(), style: { default: "border:none;padding:6px 8px;vertical-align:top", renderHTML: (attrs) => ({ style: attrs.style }) } };
+  },
+});
 
 interface Props {
   value: string;
@@ -26,6 +48,7 @@ interface Props {
 
 export default function RichTextEditor({ value, onChange, placeholder, className }: Props) {
   const initialized = useRef(false);
+  const [imgWidth, setImgWidth] = useState("");
 
   const editor = useEditor({
     extensions: [
@@ -33,12 +56,12 @@ export default function RichTextEditor({ value, onChange, placeholder, className
       Underline,
       TextStyle,
       Color,
-      Image.configure({ inline: true, allowBase64: true }),
+      ResizableImage.configure({ inline: true, allowBase64: true }),
       Link.configure({ openOnClick: false, HTMLAttributes: { rel: "noopener noreferrer" } }),
-      Table.configure({ resizable: false }),
+      Table.configure({ resizable: false, HTMLAttributes: { style: "border-collapse:collapse;width:100%" } }),
       TableRow,
-      TableCell,
-      TableHeader,
+      BorderlessCell,
+      BorderlessHeader,
     ],
     content: value,
     onUpdate: ({ editor }) => onChange(editor.getHTML()),
@@ -57,6 +80,23 @@ export default function RichTextEditor({ value, onChange, placeholder, className
       editor.commands.setContent(value, { emitUpdate: false });
     }
   }, [value, editor]);
+
+  // Sync imgWidth input when selection changes
+  useEffect(() => {
+    if (!editor) return;
+    const update = () => {
+      const attrs = editor.getAttributes("image");
+      setImgWidth(attrs.width ? String(attrs.width) : "");
+    };
+    editor.on("selectionUpdate", update);
+    return () => { editor.off("selectionUpdate", update); };
+  }, [editor]);
+
+  function applyImgWidth(w: string) {
+    const n = parseInt(w, 10);
+    if (!n || n < 1) return;
+    editor?.chain().focus().updateAttributes("image", { width: n }).run();
+  }
 
   function addLink() {
     const url = window.prompt("URL");
@@ -77,6 +117,7 @@ export default function RichTextEditor({ value, onChange, placeholder, className
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const inTable = editor?.isActive("table");
+  const inImage = editor?.isActive("image");
 
   if (!editor) return null;
 
@@ -100,6 +141,21 @@ export default function RichTextEditor({ value, onChange, placeholder, className
         <ToolBtn onClick={() => fileInputRef.current?.click()} title="Upload image">
           <RiImageLine size={13} />
         </ToolBtn>
+        {/* Image width input — shown when image is selected */}
+        {inImage && (
+          <div className="flex items-center gap-1 ml-1">
+            <input
+              type="number"
+              value={imgWidth}
+              onChange={(e) => setImgWidth(e.target.value)}
+              onBlur={(e) => applyImgWidth(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && applyImgWidth(imgWidth)}
+              placeholder="px"
+              className="w-14 h-5 px-1.5 text-xs bg-base-300 border border-base-300/70 rounded outline-none focus:border-primary"
+            />
+            <span className="text-[10px] text-base-content/30">px</span>
+          </div>
+        )}
         <div className="w-px h-4 bg-base-300/70 mx-1" />
         <ToolBtn onClick={() => editor.chain().focus().toggleBulletList().run()} active={editor.isActive("bulletList")} title="Bullet list">
           <RiListUnordered size={13} />
@@ -112,7 +168,7 @@ export default function RichTextEditor({ value, onChange, placeholder, className
         {!inTable ? (
           <ToolBtn
             onClick={() => editor.chain().focus().insertTable({ rows: 2, cols: 2, withHeaderRow: false }).run()}
-            title="Insert table"
+            title="Insert table (borderless layout)"
           >
             <RiTable2 size={13} />
           </ToolBtn>
@@ -145,8 +201,7 @@ export default function RichTextEditor({ value, onChange, placeholder, className
         .tiptap ul { list-style: disc; padding-left: 1.25rem; }
         .tiptap ol { list-style: decimal; padding-left: 1.25rem; }
         .tiptap table { border-collapse: collapse; width: 100%; }
-        .tiptap td, .tiptap th { border: 1px solid rgba(255,255,255,0.15); padding: 4px 8px; min-width: 40px; vertical-align: top; }
-        .tiptap th { background: rgba(255,255,255,0.06); font-weight: 600; }
+        .tiptap td, .tiptap th { outline: 1px dashed rgba(255,255,255,0.15); padding: 6px 8px; min-width: 40px; vertical-align: top; }
         .tiptap .selectedCell { background: rgba(90,162,255,0.12); }
         .tiptap [data-placeholder]::before {
           content: attr(data-placeholder);
