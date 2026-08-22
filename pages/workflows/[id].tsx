@@ -3350,9 +3350,10 @@ export default function WorkflowDetailPage({
                                 </span>
                               );
                             })()}
-                            {(p.state === "failed" || (p.state === "skipped" && p.error_message && (p.error_message.includes("bounced") || p.error_message.includes("domain invalid")))) && p.error_message && (
+                            {p.error_message && (
                               <button
-                                className="text-warning/60 hover:text-warning transition-colors"
+                                className={`transition-colors ${p.state === "failed" ? "text-error/70 hover:text-error" : "text-warning/60 hover:text-warning"}`}
+                                title={p.error_message}
                                 onClick={(e) => { e.stopPropagation(); setErrorModal(p.error_message!); }}
                               >
                                 <RiErrorWarningLine size={13} />
