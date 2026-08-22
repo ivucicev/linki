@@ -15,6 +15,7 @@ import {
   RiInboxLine,
   RiMailCheckLine,
   RiCheckboxCircleLine,
+  RiCheckDoubleLine,
   RiQuestionLine,
   RiCompassLine,
   RiPlayCircleLine,
@@ -33,6 +34,7 @@ const mainNav = [
   { href: "/inbox", label: "Inbox", icon: RiInboxLine, color: "#38bdf8", tour: "nav-inbox" },
   { href: "/email-health", label: "Email Health", icon: RiMailCheckLine, color: "#f4b740", tour: "nav-email-health" },
   { href: "/screenshots", label: "Screenshots", icon: RiCameraLine, color: "#a78bfa", tour: "" },
+  { href: "/approvals", label: "Approvals", icon: RiCheckDoubleLine, color: "#32d583", tour: "" },
 ];
 
 // Nav items that only exist in the commercial build (ee/). Filtered out when premium absent.

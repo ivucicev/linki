@@ -472,6 +472,11 @@ function runMigrations(db: Database.Database) {
     "ALTER TABLE lists ADD COLUMN purpose TEXT",
     // Manual/CSV-only field — no automation reads or writes this, reference data only.
     "ALTER TABLE targets ADD COLUMN phone TEXT",
+    // Message approval — pause before send to let user review/edit each generated message
+    "ALTER TABLE runs ADD COLUMN require_approval INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE run_profile_tracks ADD COLUMN pending_message TEXT",
+    "ALTER TABLE run_profile_tracks ADD COLUMN pending_subject TEXT",
+    "ALTER TABLE run_profile_tracks ADD COLUMN approval_state TEXT",
   ];
   for (const sql of migrations) {
     try { db.exec(sql); } catch { /* column already exists */ }

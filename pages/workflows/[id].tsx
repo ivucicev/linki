@@ -68,6 +68,7 @@ interface WorkflowData {
     list_id?: string;
     list_name: string;
     account_name: string;
+    require_approval: number;
   } | null;
 }
 
@@ -88,6 +89,7 @@ interface Stats {
     list_id?: string;
     list_name: string;
     account_name: string;
+    require_approval: number;
   } | null;
 }
 
@@ -247,14 +249,14 @@ export const getServerSideProps: GetServerSideProps = async ({ params, query }) 
 
   const activeRun = db
     .prepare(
-      `SELECT r.id, r.status, r.list_id, l.name as list_name, a.name as account_name
+      `SELECT r.id, r.status, r.list_id, r.require_approval, l.name as list_name, a.name as account_name
        FROM runs r
        LEFT JOIN lists l ON l.id = r.list_id
        LEFT JOIN accounts a ON a.id = r.account_id
        WHERE r.workflow_id = ? AND r.status IN ('running','paused')
        LIMIT 1`
     )
-    .get(id) as { id: string; status: string; list_id: string; list_name: string; account_name: string } | undefined;
+    .get(id) as { id: string; status: string; list_id: string; list_name: string; account_name: string; require_approval: number } | undefined;
 
   const lists = db
     .prepare(
@@ -2669,6 +2671,7 @@ export default function WorkflowDetailPage({
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState("");
   const [prospectFilters, setProspectFilters] = useState<ActiveFilter[]>([]);
+  const [requireApproval, setRequireApproval] = useState<boolean>(!!initial.active_run?.require_approval);
   const router = useRouter();
 
   // Strip ?setup=1 from URL so refreshing doesn't re-open the wizard
@@ -2880,6 +2883,18 @@ export default function WorkflowDetailPage({
     refreshStats();
   }
 
+  async function toggleRequireApproval() {
+    if (!activeRun) return;
+    const next = !requireApproval;
+    setRequireApproval(next);
+    await fetch(`/api/runs/${activeRun.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ require_approval: next }),
+    });
+    toast.success(next ? "Approval required for new messages" : "Approval disabled");
+  }
+
   const displayStats = stats ?? {
     total_prospects: 0,
     active_prospects: 0,
@@ -2964,9 +2979,20 @@ export default function WorkflowDetailPage({
             )}
           </div>
           {activeRun && (
-            <p className="text-xs text-base-content/40 mt-0.5 pl-0">
-              {activeRun.list_name} · {activeRun.account_name}
-            </p>
+            <div className="flex items-center gap-3 mt-0.5">
+              <p className="text-xs text-base-content/40">
+                {activeRun.list_name} · {activeRun.account_name}
+              </p>
+              {isActive && (
+                <button
+                  onClick={toggleRequireApproval}
+                  title={requireApproval ? "Approval mode on — click to disable" : "Click to require approval before each message sends"}
+                  className={`inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-md border font-medium transition-colors ${requireApproval ? "bg-warning/15 text-warning border-warning/25 hover:bg-warning/25" : "bg-base-300/50 text-base-content/40 border-base-300/50 hover:bg-base-300 hover:text-base-content/60"}`}
+                >
+                  {requireApproval ? "Approval: On" : "Approval: Off"}
+                </button>
+              )}
+            </div>
           )}
         </div>
         <div className="flex items-center gap-2 shrink-0">

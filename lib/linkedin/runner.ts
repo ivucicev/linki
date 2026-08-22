@@ -155,6 +155,10 @@ interface TrackRun {
   last_email_body: string | null;
   last_linkedin_message: string | null;
   pending_reply_context: string | null;
+  pending_message: string | null;
+  pending_subject: string | null;
+  approval_state: string | null;
+  require_approval: number;
   // joined from run_profiles / runs
   run_id: string;
   target_id: string;
@@ -469,7 +473,8 @@ async function executeStep(
   accountLimits: AccountLimits,
   emailAccountId?: string | null,
   emailAccountLimits?: EmailAccountLimits | null,
-  campaignPrompt?: string | null
+  campaignPrompt?: string | null,
+  requireApproval?: number
 ): Promise<void> {
   const stepIndex = tr.current_step;
   if (stepIndex >= steps.length) {
@@ -630,6 +635,19 @@ async function executeStep(
         return;
       }
 
+      // Approval gate
+      if (requireApproval && !tr.pending_message) {
+        db.prepare(
+          "UPDATE run_profile_tracks SET pending_message = ?, pending_subject = NULL, approval_state = 'waiting' WHERE id = ?"
+        ).run(messageText, tr.id);
+        log(db, runId, target.id, "info", `Message pending approval for ${name}`);
+        return;
+      }
+      // If approved, use saved message instead of regenerated one
+      if (tr.pending_message) {
+        messageText = tr.pending_message;
+      }
+
       db.prepare("UPDATE run_profile_tracks SET last_step_at = datetime('now') WHERE id = ?").run(tr.id);
       log(db, runId, target.id, "info", `Sending message to ${name}`);
       const messageLinkedinUrl = await getLinkedinUrl(db, target, accountId);
@@ -654,6 +672,7 @@ async function executeStep(
       }
       await saveSessionState(accountId);
       db.prepare("UPDATE targets SET message_sent_at = ? WHERE id = ?").run(nowIso(), target.id);
+      db.prepare("UPDATE run_profile_tracks SET pending_message = NULL, pending_subject = NULL, approval_state = NULL WHERE id = ?").run(tr.id);
       trRecordContext(db, tr, { linkedinMessage: messageText });
       trAdvance(db, tr, steps);
       log(db, runId, target.id, "info", `Message sent to ${name}`);
@@ -747,6 +766,20 @@ async function executeStep(
         return;
       }
 
+      // Approval gate
+      if (requireApproval && !tr.pending_message) {
+        db.prepare(
+          "UPDATE run_profile_tracks SET pending_message = ?, pending_subject = ?, approval_state = 'waiting' WHERE id = ?"
+        ).run(inmailBody, inmailSubject, tr.id);
+        log(db, runId, target.id, "info", `Message pending approval for ${name}`);
+        return;
+      }
+      // If approved, use saved message instead of regenerated one
+      if (tr.pending_message) {
+        inmailBody = tr.pending_message;
+        if (tr.pending_subject) inmailSubject = tr.pending_subject;
+      }
+
       db.prepare("UPDATE run_profile_tracks SET last_step_at = datetime('now') WHERE id = ?").run(tr.id);
       log(db, runId, target.id, "info", `Sending InMail to ${name}`);
       const page = await getSessionPage(accountId);
@@ -757,6 +790,7 @@ async function executeStep(
       }
       await saveSessionState(accountId);
       db.prepare("UPDATE targets SET inmail_sent_at = ?, message_sent_at = COALESCE(message_sent_at, ?) WHERE id = ?").run(nowIso(), nowIso(), target.id);
+      db.prepare("UPDATE run_profile_tracks SET pending_message = NULL, pending_subject = NULL, approval_state = NULL WHERE id = ?").run(tr.id);
       trRecordContext(db, tr, { linkedinMessage: inmailBody });
       trAdvance(db, tr, steps);
       log(db, runId, target.id, "info", `InMail sent to ${name}`);
@@ -859,6 +893,20 @@ async function executeStep(
         return;
       }
 
+      // Approval gate
+      if (requireApproval && !tr.pending_message) {
+        db.prepare(
+          "UPDATE run_profile_tracks SET pending_message = ?, pending_subject = ?, approval_state = 'waiting' WHERE id = ?"
+        ).run(emailBody, emailSubject || null, tr.id);
+        log(db, runId, target.id, "info", `Message pending approval for ${name}`);
+        return;
+      }
+      // If approved, use saved message instead of regenerated one
+      if (tr.pending_message) {
+        emailBody = tr.pending_message;
+        if (tr.pending_subject) emailSubject = tr.pending_subject;
+      }
+
       const emailAccount = db.prepare("SELECT * FROM email_accounts WHERE id = ?").get(emailAccountId) as {
         id: string; from_email: string; from_name: string | null; reply_to: string | null;
         smtp_host: string; smtp_port: number; smtp_secure: number;
@@ -899,6 +947,7 @@ async function executeStep(
       db.prepare("UPDATE run_profile_tracks SET last_step_at = datetime('now') WHERE id = ?").run(tr.id);
       log(db, runId, target.id, "info", `Sending email to ${name} <${freshTarget.email}>`);
       await sendEmail({ ...emailAccount, password: decryptSecret(emailAccount.password)! }, freshTarget.email, emailSubject, finalEmailBody, isHtmlSig ? sig : null);
+      db.prepare("UPDATE run_profile_tracks SET pending_message = NULL, pending_subject = NULL, approval_state = NULL WHERE id = ?").run(tr.id);
       trRecordContext(db, tr, { emailSubject, emailBody });
       trAdvance(db, tr, steps);
       log(db, runId, target.id, "info", `Email sent to ${name}`);
@@ -1174,9 +1223,9 @@ async function tick(db: ReturnType<typeof getDb>): Promise<void> {
   const dueTrackRuns = db.prepare(
     `SELECT rt.id, rt.run_profile_id, rt.track, rt.state, rt.current_step, rt.next_step_at,
             rt.error_message, rt.last_email_subject, rt.last_email_body, rt.last_linkedin_message,
-            rt.pending_reply_context,
+            rt.pending_reply_context, rt.pending_message, rt.pending_subject, rt.approval_state,
             rp.run_id, rp.target_id, rp.email_account_id,
-            r.account_id, r.workflow_id,
+            r.account_id, r.workflow_id, r.require_approval,
             t.connection_requested_at
      FROM run_profile_tracks rt
      JOIN run_profiles rp ON rp.id = rt.run_profile_id
@@ -1185,6 +1234,7 @@ async function tick(db: ReturnType<typeof getDb>): Promise<void> {
      WHERE rp.run_id IN (${placeholders})
        AND rt.state = 'in_progress'
        AND (rt.next_step_at IS NULL OR datetime(rt.next_step_at) <= datetime('now'))
+       AND (rt.approval_state IS NULL OR rt.approval_state != 'waiting')
      ORDER BY rt.next_step_at ASC`
   ).all(...runIds) as TrackRun[];
 
@@ -1376,7 +1426,7 @@ async function tick(db: ReturnType<typeof getDb>): Promise<void> {
     if (!runStatus || runStatus.status !== "running") continue;
 
     const target = db.prepare("SELECT * FROM targets WHERE id = ?").get(tr.target_id) as Target;
-    await executeStep(db, tr.run_id, tr, target, steps, tr.account_id, limits, emailAccountId, emailLimits, getWorkflowPrompt(tr.workflow_id));
+    await executeStep(db, tr.run_id, tr, target, steps, tr.account_id, limits, emailAccountId, emailLimits, getWorkflowPrompt(tr.workflow_id), tr.require_approval ?? 0);
     await randomDelay(PROFILE_DELAY_MIN, PROFILE_DELAY_MAX);
   }
 }

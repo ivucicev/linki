@@ -70,7 +70,11 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
   }
 
   if (req.method === "PATCH") {
-    const { status } = req.body;
+    const { status, require_approval } = req.body as { status?: string; require_approval?: boolean };
+    if (require_approval !== undefined) {
+      db.prepare("UPDATE runs SET require_approval = ? WHERE id = ?").run(require_approval ? 1 : 0, id);
+      return res.json({ ok: true });
+    }
     if (!status) return res.status(400).json({ error: "status required" });
     db.prepare("UPDATE runs SET status = ? WHERE id = ?").run(status, id);
     return res.json({ ok: true });
