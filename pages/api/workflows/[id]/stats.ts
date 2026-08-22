@@ -31,6 +31,10 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
           SELECT 1 FROM run_profile_tracks rt
           WHERE rt.run_profile_id = rp.id AND rt.state NOT IN ('failed','skipped')
         ) THEN rp.id END) AS failed_prospects,
+        COUNT(DISTINCT CASE WHEN EXISTS (
+          SELECT 1 FROM run_profile_tracks rt
+          WHERE rt.run_profile_id = rp.id AND rt.error_message IS NOT NULL
+        ) THEN rp.id END) AS errored_prospects,
         -- Log-based counts scoped to this workflow's runs only
         (SELECT COUNT(DISTINCT target_id) FROM logs
           WHERE run_id IN (${RUNS}) AND message LIKE 'Connection request sent%') AS connections_sent,
@@ -51,6 +55,7 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
       active_prospects: number;
       completed_prospects: number;
       failed_prospects: number;
+      errored_prospects: number;
       connections_sent: number;
       connections_accepted: number;
       messages_sent: number;
@@ -78,6 +83,7 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
       active_prospects: counts.active_prospects ?? 0,
       completed_prospects: counts.completed_prospects ?? 0,
       failed_prospects: counts.failed_prospects ?? 0,
+      errored_prospects: counts.errored_prospects ?? 0,
       connections_sent,
       connections_accepted,
       acceptance_rate,

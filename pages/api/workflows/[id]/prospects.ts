@@ -119,6 +119,9 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
                   AND NOT EXISTS (SELECT 1 FROM run_profile_tracks rt_sf3 WHERE rt_sf3.run_profile_id = rp.id AND rt_sf3.state = 'failed')
                   AND EXISTS (SELECT 1 FROM run_profile_tracks rt_sf4 WHERE rt_sf4.run_profile_id = rp.id AND rt_sf4.state = 'skipped')`;
         }
+        if (s === "errors") {
+          return `EXISTS (SELECT 1 FROM run_profile_tracks rt_sf WHERE rt_sf.run_profile_id = rp.id AND rt_sf.error_message IS NOT NULL)`;
+        }
         return "EXISTS (SELECT 1 FROM run_profile_tracks rt_sf WHERE rt_sf.run_profile_id = rp.id AND rt_sf.state = ?)";
       });
       const filteredStates = states.filter(s => !["completed","in_progress","failed","skipped"].includes(s));

@@ -77,6 +77,7 @@ interface Stats {
   active_prospects: number;
   completed_prospects: number;
   failed_prospects: number;
+  errored_prospects: number;
   connections_sent: number;
   connections_accepted: number;
   acceptance_rate: number;
@@ -2661,7 +2662,7 @@ export default function WorkflowDetailPage({
   const [prospectsPage, setProspectsPage] = useState(0);
   const PROSPECTS_PAGE_SIZE = 25;
   // selectedStep: { track, step_order } for a specific step, or a string sentinel for outcome filters
-  const [selectedStep, setSelectedStep] = useState<{ track: string; step_order: number } | "completed" | "failed" | null>(null);
+  const [selectedStep, setSelectedStep] = useState<{ track: string; step_order: number } | "completed" | "failed" | "errors" | null>(null);
   const [showWizard, setShowWizard] = useState(autoSetup || initial.steps.length === 0);
   const [wizardMode, setWizardMode] = useState<WizardMode>("launch");
   const [showStop, setShowStop] = useState(false);
@@ -2693,12 +2694,13 @@ export default function WorkflowDetailPage({
 
   const refreshProspects = useCallback(async () => {
     const params = new URLSearchParams();
-    if (selectedStep !== null && selectedStep !== "completed" && selectedStep !== "failed") {
+    if (selectedStep !== null && selectedStep !== "completed" && selectedStep !== "failed" && selectedStep !== "errors") {
       params.set("step", String(selectedStep.step_order));
       params.set("track", selectedStep.track);
     }
     if (selectedStep === "completed") params.set("state", "completed");
     if (selectedStep === "failed") params.set("state", "failed,skipped");
+    if (selectedStep === "errors") params.set("state", "errors");
     params.set("page", String(prospectsPage));
     if (search.trim()) params.set("search", search.trim());
     filtersToParams(prospectFilters).forEach((v, k) => params.set(k, v));
@@ -2900,6 +2902,7 @@ export default function WorkflowDetailPage({
     active_prospects: 0,
     completed_prospects: 0,
     failed_prospects: 0,
+    errored_prospects: 0,
     connections_sent: 0,
     connections_accepted: 0,
     acceptance_rate: 0,
@@ -3181,6 +3184,15 @@ export default function WorkflowDetailPage({
                     >
                       <span className="w-2 h-2 rounded-full bg-error shrink-0" />
                       <span className="font-medium">{displayStats.failed_prospects} failed / skipped</span>
+                    </button>
+                  )}
+                  {displayStats.errored_prospects > 0 && (
+                    <button
+                      onClick={() => setSelectedStep(selectedStep === "errors" ? null : "errors")}
+                      className={`w-full text-left px-3 py-2.5 rounded-xl text-xs transition-all flex items-center gap-2.5 border ${selectedStep === "errors" ? "text-warning bg-warning/10 border-warning/20" : "text-base-content/50 hover:text-warning bg-base-200 border-base-300/40 hover:border-warning/20"}`}
+                    >
+                      <span className="w-2 h-2 rounded-full bg-warning shrink-0" />
+                      <span className="font-medium">{displayStats.errored_prospects} with errors</span>
                     </button>
                   )}
                 </div>
