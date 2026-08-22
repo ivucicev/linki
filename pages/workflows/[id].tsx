@@ -2782,6 +2782,18 @@ export default function WorkflowDetailPage({
     }
   }
 
+  async function retryAllErrored() {
+    const res = await fetch(`/api/workflows/${initial.id}/retry-errored`, { method: "POST" });
+    if (res.ok) {
+      const d = await res.json();
+      toast.success(`Retrying ${d.retried} contact${d.retried === 1 ? "" : "s"}`);
+      setProspects((prev) => prev.map((p) => p.error_message ? { ...p, state: "in_progress", error_message: null } : p));
+      refreshStats();
+    } else {
+      toast.error("Failed to retry");
+    }
+  }
+
   async function retryProspect(runId: string, targetId: string) {
     const res = await fetch(`/api/runs/${runId}/retry`, {
       method: "POST",
@@ -3187,13 +3199,24 @@ export default function WorkflowDetailPage({
                     </button>
                   )}
                   {displayStats.errored_prospects > 0 && (
-                    <button
-                      onClick={() => setSelectedStep(selectedStep === "errors" ? null : "errors")}
-                      className={`w-full text-left px-3 py-2.5 rounded-xl text-xs transition-all flex items-center gap-2.5 border ${selectedStep === "errors" ? "text-warning bg-warning/10 border-warning/20" : "text-base-content/50 hover:text-warning bg-base-200 border-base-300/40 hover:border-warning/20"}`}
-                    >
-                      <span className="w-2 h-2 rounded-full bg-warning shrink-0" />
-                      <span className="font-medium">{displayStats.errored_prospects} with errors</span>
-                    </button>
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => setSelectedStep(selectedStep === "errors" ? null : "errors")}
+                        className={`flex-1 text-left px-3 py-2.5 rounded-xl text-xs transition-all flex items-center gap-2.5 border ${selectedStep === "errors" ? "text-warning bg-warning/10 border-warning/20" : "text-base-content/50 hover:text-warning bg-base-200 border-base-300/40 hover:border-warning/20"}`}
+                      >
+                        <span className="w-2 h-2 rounded-full bg-warning shrink-0" />
+                        <span className="font-medium">{displayStats.errored_prospects} with errors</span>
+                      </button>
+                      {isActive && (
+                        <button
+                          onClick={retryAllErrored}
+                          title="Retry all errored contacts"
+                          className="px-2 py-2.5 rounded-xl text-xs border bg-base-200 border-base-300/40 text-base-content/40 hover:text-info hover:border-info/30 hover:bg-info/10 transition-colors"
+                        >
+                          <RiRefreshLine size={12} />
+                        </button>
+                      )}
+                    </div>
                   )}
                 </div>
               )}
