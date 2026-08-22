@@ -65,6 +65,9 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
           WHERE r.workflow_id = ? AND r.status IN ('running','paused','completed')) AS total,
 
         (SELECT COUNT(DISTINCT target_id) FROM logs
+          WHERE run_id IN (${RUNS}) AND message LIKE 'Visited%') AS profile_visits,
+
+        (SELECT COUNT(DISTINCT target_id) FROM logs
           WHERE run_id IN (${RUNS}) AND message LIKE 'Connection request sent%') AS connections_sent,
 
         (SELECT COUNT(DISTINCT l.target_id) FROM logs l
@@ -106,10 +109,10 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
               WHERE rt.run_profile_id = rp.id AND rt.state = 'completed'
             )) AS completed
     `).get(
-      workflowId, workflowId, workflowId, workflowId,
+      workflowId, workflowId, workflowId, workflowId, workflowId,
       workflowId, workflowId, workflowId, workflowId, workflowId,
     ) as {
-      total: number; connections_sent: number; connected: number;
+      total: number; profile_visits: number; connections_sent: number; connected: number;
       messages_sent: number; inmails_sent: number; li_replies: number;
       emails_sent: number; email_replies: number; completed: number;
     };

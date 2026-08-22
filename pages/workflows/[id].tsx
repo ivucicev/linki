@@ -2372,7 +2372,7 @@ function Wizard({
 
 interface AnalyticsData {
   funnel: {
-    total: number; connections_sent: number; connected: number;
+    total: number; profile_visits: number; connections_sent: number; connected: number;
     messages_sent: number; inmails_sent: number; li_replies: number;
     emails_sent: number; email_replies: number; completed: number;
   };
@@ -2382,6 +2382,7 @@ interface AnalyticsData {
 }
 
 const ANALYTICS_SERIES = [
+  { key: "visits" as const,      color: "#94a3b8", label: "Profile visits" },
   { key: "connections" as const, color: "#32d583", label: "Connects" },
   { key: "messages" as const,    color: "#f4b740", label: "Messages" },
   { key: "inmails" as const,     color: "#e879f9", label: "InMails" },
@@ -2616,6 +2617,7 @@ function AnalyticsPanel({ workflowId, days: initialDays }: { workflowId: string;
             </div>
             <div className="space-y-0.5">
               <FunnelBar label="Prospects" value={funnel.total} color="#808080" />
+              <FunnelBar label="Profile visits" value={funnel.profile_visits} color="#94a3b8" />
               <FunnelBar label="Connections sent" value={funnel.connections_sent} color="#32d583" />
               <FunnelBar label="Connected" value={funnel.connected} color="#32d583" />
               <FunnelBar label="LI Messages" value={funnel.messages_sent} color="#f4b740" />
