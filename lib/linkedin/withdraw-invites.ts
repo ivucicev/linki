@@ -30,7 +30,8 @@ export async function withdrawOldestInvites(accountId: string, count?: number): 
   let withdrawn = 0;
 
   try {
-    await page.goto("https://www.linkedin.com/mynetwork/invitation-manager/sent/", {
+    // Navigate to CONNECTION filter — shows only connection invites + "People (N)" count badge
+    await page.goto("https://www.linkedin.com/mynetwork/invitation-manager/sent/CONNECTION/", {
       waitUntil: "domcontentloaded",
       timeout: 35000,
     });
@@ -42,9 +43,22 @@ export async function withdrawOldestInvites(accountId: string, count?: number): 
       return 0;
     }
 
+    // Read the authoritative count from the "People (N)" tab badge
+    const realTotal = await page.evaluate((): number | null => {
+      const m = document.body.textContent?.match(/People\s*\((\d+)\)/);
+      return m ? parseInt(m[1]) : null;
+    });
+    console.log(`[withdraw-invites] People badge count: ${realTotal ?? "not found"}`);
+
+    if (realTotal !== null) {
+      db.prepare("UPDATE accounts SET li_pending = ? WHERE id = ?").run(realTotal, accountId);
+    }
+
+    const toWithdraw = count ?? (realTotal !== null ? Math.max(0, realTotal - TARGET_PENDING) : 0);
+    console.log(`[withdraw-invites] ${realTotal ?? "?"} pending, withdrawing ${toWithdraw}`);
+    if (toWithdraw === 0) return 0;
+
     // Scroll until no new Withdraw buttons appear (lazy-load complete).
-    // Using button count as termination — more reliable than page height
-    // because height updates before content renders, causing early exits.
     const btnSel = '[aria-label*="Withdraw"]';
     let prevCount = -1;
     let stableRounds = 0;
@@ -55,7 +69,7 @@ export async function withdrawOldestInvites(accountId: string, count?: number): 
       console.log(`[withdraw-invites] Scroll ${i + 1}: ${curCount} buttons`);
       if (curCount === prevCount) {
         stableRounds++;
-        if (stableRounds >= 2) break; // stable for 2 rounds = truly at bottom
+        if (stableRounds >= 2) break;
       } else {
         stableRounds = 0;
       }
@@ -91,13 +105,9 @@ export async function withdrawOldestInvites(accountId: string, count?: number): 
       });
     }, btnSel);
 
-    const total = cardData.length;
     // Sort oldest first (highest daysAgo)
     const oldest = [...cardData].sort((a, b) => b.daysAgo - a.daysAgo);
-    const toWithdraw = count ?? Math.max(0, total - TARGET_PENDING);
-    console.log(`[withdraw-invites] ${total} loaded, withdrawing ${toWithdraw} oldest (most recent of those: ${oldest[toWithdraw - 1]?.daysAgo?.toFixed(0)} days ago)`);
-    db.prepare("UPDATE accounts SET li_pending = ? WHERE id = ?").run(total, accountId);
-    if (toWithdraw === 0) return 0;
+    console.log(`[withdraw-invites] ${cardData.length} DOM cards loaded, withdrawing ${toWithdraw} oldest (most recent of those: ${oldest[toWithdraw - 1]?.daysAgo?.toFixed(0)} days ago)`);
 
     // Withdraw each oldest card. Re-query each iteration since DOM shifts after removal.
     for (let i = 0; i < toWithdraw; i++) {
@@ -184,7 +194,9 @@ export async function withdrawOldestInvites(accountId: string, count?: number): 
       }
     }
 
-    db.prepare("UPDATE accounts SET li_pending = ? WHERE id = ?").run(Math.max(0, total - withdrawn), accountId);
+    if (realTotal !== null) {
+      db.prepare("UPDATE accounts SET li_pending = ? WHERE id = ?").run(Math.max(0, realTotal - withdrawn), accountId);
+    }
   } finally {
     let url = "";
     try { url = page.url(); } catch { /* gone */ }
