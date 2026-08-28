@@ -183,6 +183,7 @@ interface Target {
   location: string | null;
   degree: number | null;
   connection_requested_at: string | null;
+  connection_withdrawn_at: string | null;
   connected_at: string | null;
   email: string | null;
   email_status: string | null;
@@ -531,6 +532,16 @@ async function executeStep(
         log(db, runId, target.id, "info", `${name} already connected — skipping connect step`);
         trAdvance(db, tr, steps);
         return;
+      }
+
+      // Cooldown after withdrawal — LinkedIn blocks re-invite for ~3 weeks
+      if (freshTarget.connection_withdrawn_at) {
+        const cooldownUntil = new Date(new Date(freshTarget.connection_withdrawn_at).getTime() + 22 * 24 * 60 * 60 * 1000);
+        if (new Date() < cooldownUntil) {
+          log(db, runId, target.id, "info", `${name} in withdrawal cooldown until ${cooldownUntil.toLocaleDateString()} — skipping`);
+          trSkip(db, tr, `Invite withdrawn — cooldown until ${cooldownUntil.toLocaleDateString()}`);
+          return;
+        }
       }
 
       if (freshTarget.connection_requested_at) {

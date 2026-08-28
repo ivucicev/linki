@@ -482,6 +482,8 @@ function runMigrations(db: Database.Database) {
     "ALTER TABLE targets ADD COLUMN connection_rejected_at TEXT",
     // Invite withdrawal tracking
     "ALTER TABLE accounts ADD COLUMN withdraw_invites_at TEXT",
+    // Per-contact withdrawal timestamp — 3-week cooldown before re-sending
+    "ALTER TABLE targets ADD COLUMN connection_withdrawn_at TEXT",
   ];
   for (const sql of migrations) {
     try { db.exec(sql); } catch { /* column already exists */ }

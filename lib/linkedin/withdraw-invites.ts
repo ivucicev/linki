@@ -1,4 +1,5 @@
 import type { Page } from "playwright";
+import { randomUUID } from "crypto";
 import { getDb } from "@/lib/db";
 import { getSessionPage, saveSessionState, markNeedsReauth } from "@/lib/linkedin/session";
 import { saveScreenshot } from "./screenshot";
@@ -66,12 +67,21 @@ export async function withdrawOldestInvites(accountId: string, count = WITHDRAW_
         const withdrawn_ok = await withdrawOneOnPage(page, invite.entityUrn, invite.inviteeProfileUrl);
         if (withdrawn_ok) {
           withdrawn++;
-          // Clear connection_requested_at in DB if we can find the target
+          // Mark withdrawn in DB — clears pending, sets cooldown, logs activity
           if (invite.inviteeProfileUrl) {
             const vanity = invite.inviteeProfileUrl.replace(/^\/in\//, "").replace(/\/$/, "");
-            db.prepare(
-              "UPDATE targets SET connection_requested_at = NULL WHERE linkedin_url LIKE ?"
-            ).run(`%/in/${vanity}%`);
+            const now = new Date().toISOString();
+            const affected = db.prepare(
+              "UPDATE targets SET connection_requested_at = NULL, connection_withdrawn_at = ? WHERE linkedin_url LIKE ?"
+            ).run(now, `%/in/${vanity}%`);
+            if (affected.changes > 0) {
+              const target = db.prepare("SELECT id FROM targets WHERE linkedin_url LIKE ?").get(`%/in/${vanity}%`) as { id: string } | undefined;
+              if (target) {
+                db.prepare(
+                  "INSERT INTO activity_logs (id, target_id, type, body) VALUES (?, ?, 'other', ?)"
+                ).run(randomUUID(), target.id, "Connection invite withdrawn (oldest pending — 3-week cooldown applied)");
+              }
+            }
           }
           await page.waitForTimeout(1200 + Math.random() * 800);
         }
