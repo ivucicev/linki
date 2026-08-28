@@ -33,6 +33,7 @@ import {
   RiRefreshLine,
   RiErrorWarningLine,
   RiFlashlightLine,
+  RiUserFollowLine,
 } from "react-icons/ri";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -2796,6 +2797,18 @@ export default function WorkflowDetailPage({
     }
   }
 
+  async function checkConnection(targetId: string) {
+    const res = await fetch(`/api/targets/${targetId}/check-connection`, { method: "POST" });
+    if (res.ok) {
+      const d = await res.json();
+      toast.success(d.isFirstDegree ? "Connected ✓" : "Not connected");
+      refreshProspects();
+    } else {
+      const err = await res.json().catch(() => ({}));
+      toast.error(err.error ?? "Check failed");
+    }
+  }
+
   async function rerunProspect(runId: string, targetId: string) {
     const res = await fetch(`/api/runs/${runId}/rerun`, {
       method: "POST",
@@ -2864,7 +2877,7 @@ export default function WorkflowDetailPage({
   }
 
   // Group target_ids by run_id, then fire one request per run
-  async function bulkAction(action: "retry" | "rerun" | "remove" | "unenroll" | "expedite", targetIds: string[]) {
+  async function bulkAction(action: "retry" | "rerun" | "check-connections" | "remove" | "unenroll" | "expedite", targetIds: string[]) {
     const grouped: Record<string, string[]> = {};
     for (const tid of targetIds) {
       const p = prospects.find((x) => x.target_id === tid);
@@ -3279,6 +3292,7 @@ export default function WorkflowDetailPage({
                   const expediteSel = sel.filter((p) => isActive && p.state === "in_progress" && p.next_step_at !== null && new Date(p.next_step_at) > new Date());
                   const removeSel = sel.filter((p) => p.state !== "completed");
                   const rerunSel = sel.filter((p) => p.state === "completed" || p.state === "skipped");
+                  const checkSel = sel.filter((p) => p.linkedin_url && (p.state === "completed" || p.state === "failed" || p.state === "skipped"));
                   const linkedinSel = sel.filter((p) => p.linkedin_url);
                   return (
                     <div className="absolute inset-0 flex items-center gap-2 px-3 bg-base-200 border border-base-300/50 rounded-lg z-10">
@@ -3305,6 +3319,14 @@ export default function WorkflowDetailPage({
                           onClick={() => bulkAction("rerun", rerunSel.map((p) => p.target_id))}
                         >
                           <RiRefreshLine size={12} /> Re-run {rerunSel.length} from start
+                        </button>
+                      )}
+                      {checkSel.length > 0 && (
+                        <button
+                          className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-medium bg-warning/10 text-warning border border-warning/20 hover:bg-warning/20 transition-colors"
+                          onClick={() => bulkAction("check-connections", checkSel.map((p) => p.target_id))}
+                        >
+                          <RiUserFollowLine size={12} /> Check {checkSel.length} connections
                         </button>
                       )}
                       {expediteSel.length > 0 && (
@@ -3446,6 +3468,15 @@ export default function WorkflowDetailPage({
                               >
                                 <RiLinkedinBoxLine size={13} />
                               </a>
+                            )}
+                            {p.linkedin_url && (p.state === "completed" || p.state === "failed" || p.state === "skipped") && (
+                              <button
+                                title="Check connection status live"
+                                onClick={() => checkConnection(p.target_id)}
+                                className="inline-flex items-center p-1 rounded text-base-content/20 hover:text-warning hover:bg-warning/10 transition-colors"
+                              >
+                                <RiUserFollowLine size={13} />
+                              </button>
                             )}
                             {isActive && p.state === "in_progress" && p.next_step_at !== null && new Date(p.next_step_at) > new Date() && (
                               <button
