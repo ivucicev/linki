@@ -5,6 +5,7 @@ import { visitProfile } from "@/lib/linkedin/visit";
 import { sendConnectionRequest, WeeklyLimitError, AlreadyConnectedError, PendingInviteError } from "@/lib/linkedin/connect";
 import { sendMessage, NotConnectedError } from "@/lib/linkedin/message";
 import { shouldSyncAccepted, syncAcceptedConnections } from "@/lib/linkedin/sync-accepted";
+import { shouldWithdrawInvites, withdrawOldestInvites } from "@/lib/linkedin/withdraw-invites";
 import { sendEmail } from "@/lib/email/sender";
 import { shouldSyncEmailInbox, syncEmailInbox } from "@/lib/email/inbox";
 import { enrichProfile } from "@/lib/linkedin/enrich";
@@ -1032,6 +1033,24 @@ async function tick(db: ReturnType<typeof getDb>): Promise<void> {
   for (const run of activeRuns) {
     if (seenAccounts.has(run.account_id)) continue;
     seenAccounts.add(run.account_id);
+  }
+
+  // Daily: withdraw oldest pending invites if approaching 200-invite cap
+  for (const accountId of seenAccounts) {
+    if (shouldWithdrawInvites(accountId)) {
+      try {
+        console.log(`[runner] Starting invite withdrawal for account ${accountId}`);
+        const withdrawn = await withdrawOldestInvites(accountId);
+        if (withdrawn > 0) {
+          for (const r of activeRuns.filter(x => x.account_id === accountId)) {
+            log(db, r.run_id, null, "info", `Withdrew ${withdrawn} oldest pending connection invite${withdrawn === 1 ? "" : "s"}`);
+          }
+        }
+        console.log(`[runner] Invite withdrawal complete — ${withdrawn} withdrawn`);
+      } catch (e) {
+        console.warn("[runner] Invite withdrawal error:", e instanceof Error ? e.message : e);
+      }
+    }
   }
 
   // Daily sync: stamp accepted connections from invitation manager (once per 23h per account)

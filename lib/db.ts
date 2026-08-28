@@ -480,6 +480,8 @@ function runMigrations(db: Database.Database) {
     // Connection rejection detection — set when check-connection finds no 1st badge and no Pending indicator
     // despite connection_requested_at being set, meaning LinkedIn removed the invite (rejected or expired).
     "ALTER TABLE targets ADD COLUMN connection_rejected_at TEXT",
+    // Invite withdrawal tracking
+    "ALTER TABLE accounts ADD COLUMN withdraw_invites_at TEXT",
   ];
   for (const sql of migrations) {
     try { db.exec(sql); } catch { /* column already exists */ }
