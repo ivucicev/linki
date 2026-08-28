@@ -1,4 +1,4 @@
-import type { Page } from "playwright";
+import type { Page, Response as PlaywrightResponse } from "playwright";
 import { randomUUID } from "crypto";
 import { getDb } from "@/lib/db";
 import { getSessionPage, saveSessionState, markNeedsReauth } from "@/lib/linkedin/session";
@@ -6,8 +6,8 @@ import { saveScreenshot } from "./screenshot";
 
 // Withdraw oldest pending invitations to stay under LinkedIn's 200-invite cap.
 // Triggers at 180 pending, drains to 150 (withdraws the difference).
-// Uses Voyager API to list all pending invites without DOM scrolling,
-// then DOM to click Withdraw + confirm dialog per invite.
+// Intercepts LinkedIn's own Voyager API calls during page load to discover
+// the correct endpoint URL, then paginates from the browser context.
 
 const WITHDRAW_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const TARGET_PENDING = 150;  // drain to this
@@ -36,11 +36,9 @@ export async function withdrawOldestInvites(accountId: string, count?: number): 
   let withdrawn = 0;
 
   try {
-    await page.goto("https://www.linkedin.com/mynetwork/invitation-manager/sent/", {
-      waitUntil: "domcontentloaded",
-      timeout: 35000,
-    });
-    await page.waitForTimeout(2500 + Math.random() * 1500);
+    // Intercept Voyager API responses BEFORE navigating so we capture the real URL
+    const invites = await navigateAndFetchInvites(page);
+
     await saveScreenshot(page, "withdraw_invites_page");
 
     if (/\/login|\/authwall|\/checkpoint|\/uas\//.test(page.url())) {
@@ -48,9 +46,8 @@ export async function withdrawOldestInvites(accountId: string, count?: number): 
       return 0;
     }
 
-    const invites = await fetchSentInvites(page);
     if (!invites) {
-      console.warn("[withdraw-invites] Voyager API failed — skipping");
+      console.warn("[withdraw-invites] Could not fetch pending invites — skipping");
       return 0;
     }
 
@@ -107,6 +104,135 @@ export async function withdrawOldestInvites(accountId: string, count?: number): 
   return withdrawn;
 }
 
+// Navigate to the sent invitations page and intercept LinkedIn's own Voyager calls
+// to discover the correct endpoint URL + parse all pages of pending invites.
+async function navigateAndFetchInvites(page: Page): Promise<PendingInvite[] | null> {
+  const all: PendingInvite[] = [];
+  let capturedApiBase: string | null = null;
+  let capturedParams: Record<string, string> = {};
+  let capturedCsrf: string | null = null;
+
+  const onResponse = async (response: PlaywrightResponse) => {
+    try {
+      const url = response.url();
+      if (!url.includes("/voyager/api/")) return;
+      if (!url.toLowerCase().includes("invitation")) return;
+      if (response.status() !== 200) return;
+
+      // Capture the real URL LinkedIn uses
+      const parsed = new URL(url);
+      if (!capturedApiBase) {
+        capturedApiBase = `${parsed.origin}${parsed.pathname}`;
+        capturedParams = Object.fromEntries(parsed.searchParams.entries());
+        const reqHeaders = await response.request().allHeaders();
+        capturedCsrf = reqHeaders["csrf-token"] ?? reqHeaders["csrf-token".toLowerCase()] ?? null;
+        console.log(`[withdraw-invites] Intercepted Voyager URL: ${capturedApiBase} params: ${JSON.stringify(capturedParams)} csrf: ${capturedCsrf ? "yes" : "no"}`);
+      }
+
+      const json = await response.json() as Record<string, unknown>;
+      parseInviteResponse(json, all);
+    } catch (e) {
+      console.warn("[withdraw-invites] Response intercept error:", e instanceof Error ? e.message : e);
+    }
+  };
+
+  page.on("response", onResponse);
+
+  await page.goto("https://www.linkedin.com/mynetwork/invitation-manager/sent/", {
+    waitUntil: "domcontentloaded",
+    timeout: 35000,
+  });
+  // Wait for the async API calls to complete
+  await page.waitForTimeout(3500);
+
+  page.off("response", onResponse);
+
+  if (!capturedApiBase || !capturedCsrf) {
+    console.warn(`[withdraw-invites] Did not intercept Voyager call. base=${capturedApiBase} csrf=${capturedCsrf}`);
+    // Return what we got (may be empty)
+    return all.length > 0 ? all : null;
+  }
+
+  // Paginate: fetch additional pages from browser context using captured URL + CSRF
+  const pageCount = parseInt(capturedParams.count ?? "20");
+  let start = pageCount; // page 0 already captured via interception
+
+  if (all.length >= pageCount) {
+    const moreInvites = await page.evaluate(
+      async ({ apiBase, params, csrf, startAt, perPage }: { apiBase: string; params: Record<string, string>; csrf: string; startAt: number; perPage: number }) => {
+        const results: Array<{ entityUrn: string; inviteeProfileUrl: string | null; sentAt: number }> = [];
+
+        for (let pg = 0; pg < 10; pg++) {
+          const p = new URLSearchParams(params);
+          p.set("start", String(startAt + pg * perPage));
+          let json: Record<string, unknown>;
+          try {
+            const r = await fetch(`${apiBase}?${p.toString()}`, {
+              headers: {
+                "csrf-token": csrf,
+                "accept": "application/vnd.linkedin.normalized+json+2.1",
+                "x-restli-protocol-version": "2.0.0",
+                "x-li-lang": "en_US",
+              },
+              credentials: "include",
+            });
+            if (!r.ok) break;
+            json = await r.json() as Record<string, unknown>;
+          } catch { break; }
+
+          const candidates = (json.included ?? json.elements ?? (json.data as Record<string,unknown>)?.elements ?? []) as Record<string, unknown>[];
+          let added = 0;
+          for (const x of candidates) {
+            const urn = (x.entityUrn ?? x.invitationUrn) as string | undefined;
+            if (!urn) continue;
+            const type = ((x["$type"] ?? x.type ?? "") as string).toLowerCase();
+            if (!type.includes("invitation")) continue;
+            const sentRaw = (x.sentTime ?? x.createdAt ?? x.sentAt) as number | string | undefined;
+            const sentAt = typeof sentRaw === "number" ? sentRaw : sentRaw ? new Date(sentRaw as string).getTime() : Date.now();
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const inv = x.invitee as any;
+            const vanity: string | null =
+              inv?.com_linkedin_voyager_identity_shared_MiniProfile?.publicIdentifier ??
+              inv?.miniProfile?.publicIdentifier ??
+              inv?.publicIdentifier ??
+              (x.inviteePublicIdentifier as string | undefined) ??
+              null;
+            results.push({ entityUrn: urn, inviteeProfileUrl: vanity ? `/in/${vanity}` : null, sentAt });
+            added++;
+          }
+          if (added === 0 || candidates.length < perPage) break;
+        }
+        return results;
+      },
+      { apiBase: capturedApiBase, params: capturedParams, csrf: capturedCsrf, startAt: start, perPage: pageCount }
+    );
+    all.push(...moreInvites);
+  }
+
+  return all;
+}
+
+function parseInviteResponse(json: Record<string, unknown>, out: PendingInvite[]): void {
+  const candidates = (json.included ?? json.elements ?? (json.data as Record<string, unknown>)?.elements ?? []) as Record<string, unknown>[];
+  for (const x of candidates) {
+    const urn = (x.entityUrn ?? x.invitationUrn) as string | undefined;
+    if (!urn) continue;
+    const type = ((x["$type"] ?? x.type ?? "") as string).toLowerCase();
+    if (!type.includes("invitation")) continue;
+    const sentRaw = (x.sentTime ?? x.createdAt ?? x.sentAt) as number | string | undefined;
+    const sentAt = typeof sentRaw === "number" ? sentRaw : sentRaw ? new Date(sentRaw as string).getTime() : Date.now();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const inv = x.invitee as any;
+    const vanity: string | null =
+      inv?.com_linkedin_voyager_identity_shared_MiniProfile?.publicIdentifier ??
+      inv?.miniProfile?.publicIdentifier ??
+      inv?.publicIdentifier ??
+      (x.inviteePublicIdentifier as string | undefined) ??
+      null;
+    out.push({ entityUrn: urn, inviteeProfileUrl: vanity ? `/in/${vanity}` : null, sentAt });
+  }
+}
+
 async function withdrawOneOnPage(
   page: Page,
   entityUrn: string,
@@ -148,91 +274,4 @@ async function withdrawOneOnPage(
 
   if (!found) await saveScreenshot(page, "withdraw_not_found", targetId);
   return found;
-}
-
-async function fetchSentInvites(page: Page): Promise<PendingInvite[] | null> {
-  const result = await page.evaluate(async (): Promise<{ invites: Array<{ entityUrn: string; inviteeProfileUrl: string | null; sentAt: number }>; debugSample: string } | null> => {
-    const cookies = document.cookie.split("; ").reduce((a: Record<string, string>, c) => {
-      const i = c.indexOf("=");
-      if (i > 0) a[c.slice(0, i)] = c.slice(i + 1);
-      return a;
-    }, {});
-    const csrf = (cookies["JSESSIONID"] || "").replace(/"/g, "");
-    if (!csrf) return null;
-
-    const all: Array<{ entityUrn: string; inviteeProfileUrl: string | null; sentAt: number }> = [];
-    let start = 0;
-    const count = 100;
-    let debugSample = "";
-
-    for (let pg = 0; pg < 5; pg++) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      let json: any;
-      try {
-        const r = await fetch(
-          `https://www.linkedin.com/voyager/api/relationships/sentInvitation/v2?start=${start}&count=${count}&sortType=DATE_CREATED`,
-          {
-            headers: {
-              "csrf-token": csrf,
-              "accept": "application/vnd.linkedin.normalized+json+2.1",
-              "x-restli-protocol-version": "2.0.0",
-              "x-li-lang": "en_US",
-            },
-            credentials: "include",
-          }
-        );
-        if (!r.ok) {
-          debugSample = `HTTP ${r.status}`;
-          break;
-        }
-        json = await r.json();
-      } catch (e) {
-        debugSample = String(e);
-        break;
-      }
-
-      // Capture shape of first response for debugging
-      if (pg === 0 && !debugSample) {
-        const topKeys = Object.keys(json);
-        const included0 = (json.included ?? json.elements ?? [])[0];
-        debugSample = JSON.stringify({ topKeys, included0keys: included0 ? Object.keys(included0) : [], included0type: included0?.["$type"], included0sentTime: included0?.sentTime, included0createdAt: included0?.createdAt });
-      }
-
-      // Try both normalized (included) and non-normalized (elements/data.elements) shapes
-      const candidates: unknown[] = json.included ?? json.elements ?? (json.data as { elements?: unknown[] })?.elements ?? [];
-      let foundAny = false;
-      for (const x of candidates as Record<string, unknown>[]) {
-        const urn = (x.entityUrn ?? x.invitationUrn) as string | undefined;
-        const type = ((x["$type"] ?? x.type ?? "") as string).toLowerCase();
-        // Accept any item that has an urn and looks like an invitation
-        if (!urn) continue;
-        if (candidates.length > 0 && !type.includes("invitation") && !type.includes("sentedinvit")) continue;
-        // sentTime, createdAt, sentAt — try all
-        const sentAt = (x.sentTime ?? x.createdAt ?? x.sentAt) as number | string | undefined;
-        const ts = typeof sentAt === "number" ? sentAt : sentAt ? new Date(sentAt as string).getTime() : Date.now();
-        // invitee profile — may be nested or flat publicIdentifier
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const invitee = x.invitee as any;
-        const vanity: string | null =
-          invitee?.com_linkedin_voyager_identity_shared_MiniProfile?.publicIdentifier ??
-          invitee?.miniProfile?.publicIdentifier ??
-          invitee?.publicIdentifier ??
-          (x.inviteePublicIdentifier as string | undefined) ??
-          null;
-        all.push({ entityUrn: urn, inviteeProfileUrl: vanity ? `/in/${vanity}` : null, sentAt: ts });
-        foundAny = true;
-      }
-      if (!foundAny || candidates.length < count) break;
-      start += count;
-    }
-
-    return { invites: all, debugSample };
-  });
-
-  if (!result) {
-    console.warn("[withdraw-invites] fetchSentInvites: evaluate returned null (no CSRF?)");
-    return null;
-  }
-  console.log(`[withdraw-invites] Voyager debug: ${result.debugSample}`);
-  return result.invites;
 }
