@@ -1,5 +1,5 @@
 import Head from "next/head";
-import { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { GetServerSideProps } from "next";
 import { useRouter } from "next/router";
 import Link from "next/link";
@@ -34,6 +34,7 @@ import {
   RiErrorWarningLine,
   RiFlashlightLine,
   RiUserFollowLine,
+  RiImageLine,
 } from "react-icons/ri";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -2672,6 +2673,9 @@ export default function WorkflowDetailPage({
   const [activeTab, setActiveTab] = useState<"prospects" | "analytics">("prospects");
   const [days] = useState(30);
   const [errorModal, setErrorModal] = useState<string | null>(null);
+  const [expandedScreenshots, setExpandedScreenshots] = useState<string | null>(null);
+  const [screenshotCache, setScreenshotCache] = useState<Record<string, Array<{ filename: string; url: string; ts: number; label: string }>>>({});
+  const [screenshotModal, setScreenshotModal] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState("");
   const [prospectFilters, setProspectFilters] = useState<ActiveFilter[]>([]);
@@ -3399,8 +3403,9 @@ export default function WorkflowDetailPage({
                       </tr>
                     )}
                     {prospects.map((p) => (
+                      <React.Fragment key={p.id}>
                       <tr
-                        key={p.id}
+                        key={p.id + "-row"}
                         className={`border-base-300/30 hover:bg-base-200/50 cursor-pointer ${selected.has(p.target_id) ? "bg-base-200/30" : ""}`}
                         onClick={() => router.push(`/contacts/${p.target_id}`)}
                       >
@@ -3469,6 +3474,21 @@ export default function WorkflowDetailPage({
                                 <RiLinkedinBoxLine size={13} />
                               </a>
                             )}
+                            <button
+                              title="View screenshots"
+                              onClick={async (e) => {
+                                e.stopPropagation();
+                                if (expandedScreenshots === p.target_id) { setExpandedScreenshots(null); return; }
+                                setExpandedScreenshots(p.target_id);
+                                if (!screenshotCache[p.target_id]) {
+                                  const r = await fetch(`/api/screenshots?targetId=${p.target_id}`);
+                                  if (r.ok) { const data = await r.json(); setScreenshotCache((c) => ({ ...c, [p.target_id]: data })); }
+                                }
+                              }}
+                              className={`inline-flex items-center p-1 rounded transition-colors ${expandedScreenshots === p.target_id ? "text-primary bg-primary/10" : "text-base-content/20 hover:text-primary hover:bg-primary/10"}`}
+                            >
+                              <RiImageLine size={13} />
+                            </button>
                             {p.linkedin_url && (p.state === "completed" || p.state === "failed" || p.state === "skipped") && (
                               <button
                                 title="Check connection status live"
@@ -3520,6 +3540,30 @@ export default function WorkflowDetailPage({
                           </div>
                         </td>
                       </tr>
+                      {expandedScreenshots === p.target_id && (
+                        <tr>
+                          <td colSpan={99} className="bg-base-200/60 px-4 py-3">
+                            {!screenshotCache[p.target_id] ? (
+                              <p className="text-xs text-base-content/30">Loading…</p>
+                            ) : screenshotCache[p.target_id].length === 0 ? (
+                              <p className="text-xs text-base-content/30">No screenshots yet.</p>
+                            ) : (
+                              <div className="flex gap-2 flex-wrap">
+                                {screenshotCache[p.target_id].map((s) => (
+                                  <button key={s.filename} onClick={() => setScreenshotModal(s.url)} className="rounded overflow-hidden border border-base-300/50 hover:border-primary/40 transition-colors text-left" style={{ width: 140 }}>
+                                    <img src={s.url} alt={s.label} className="w-full aspect-video object-cover object-top" />
+                                    <div className="px-1 py-0.5">
+                                      <p className="text-[9px] text-base-content/50 truncate">{s.label}</p>
+                                      <p className="text-[9px] text-base-content/30">{new Date(s.ts).toLocaleString()}</p>
+                                    </div>
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                      )}
+                      </React.Fragment>
                     ))}
                   </tbody>
                 </table>
@@ -3578,6 +3622,15 @@ export default function WorkflowDetailPage({
       )}
 
       {/* Error details modal */}
+      {screenshotModal && (
+        <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4" onClick={() => setScreenshotModal(null)}>
+          <div className="relative max-w-4xl w-full" onClick={(e) => e.stopPropagation()}>
+            <button onClick={() => setScreenshotModal(null)} className="absolute top-2 right-2 text-white/50 hover:text-white text-2xl leading-none z-10">×</button>
+            <img src={screenshotModal} alt="Screenshot" className="w-full rounded-xl" />
+          </div>
+        </div>
+      )}
+
       {errorModal && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4" onClick={() => setErrorModal(null)}>
           <div className="bg-base-200 border border-base-300/50 rounded-xl p-5 max-w-lg w-full" onClick={(e) => e.stopPropagation()}>

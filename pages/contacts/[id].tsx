@@ -130,7 +130,7 @@ export const getServerSideProps: GetServerSideProps = async ({ params }) => {
     SELECT id, run_id, level, message, created_at
     FROM logs
     WHERE target_id = ?
-    ORDER BY created_at ASC
+    ORDER BY created_at DESC
   `).all(id) as { id: string; run_id: string; level: string; message: string; created_at: string }[];
 
   const logsByRun: Record<string, typeof logRows> = {};
@@ -1396,14 +1396,26 @@ export default function ContactDetailPage({
 
         {screenshots.length > 0 && (
           <div className="bg-base-200 border border-base-300/50 rounded-xl p-5 mb-4">
-            <h3 className="text-xs font-semibold text-base-content/50 uppercase tracking-wide mb-3">Runner Screenshots</h3>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-xs font-semibold text-base-content/50 uppercase tracking-wide">Runner Screenshots</h3>
+              <button
+                onClick={async () => {
+                  if (!confirm(`Delete all ${screenshots.length} screenshots for this contact?`)) return;
+                  await fetch(`/api/screenshots?targetId=${target.id}`, { method: "DELETE" });
+                  setScreenshots([]);
+                }}
+                className="text-[10px] text-base-content/30 hover:text-error transition-colors"
+              >
+                Clear all
+              </button>
+            </div>
             <div className="grid grid-cols-2 gap-2">
-              {screenshots.slice(0, 6).map((s) => (
+              {screenshots.map((s) => (
                 <button key={s.filename} onClick={() => setScreenshotModal(s.url)} className="group relative rounded-lg overflow-hidden border border-base-300/50 hover:border-primary/40 transition-colors text-left">
                   <img src={s.url} alt={s.label} className="w-full aspect-video object-cover object-top" />
                   <div className="px-1.5 py-1">
                     <p className="text-[10px] font-medium text-base-content/60 truncate">{s.label}</p>
-                    <p className="text-[10px] text-base-content/30">{new Date(s.ts).toLocaleTimeString()}</p>
+                    <p className="text-[10px] text-base-content/30">{new Date(s.ts).toLocaleString()}</p>
                   </div>
                 </button>
               ))}

@@ -8,36 +8,32 @@ const DATA_DIR = process.env.LINKI_DB_PATH
   ? path.dirname(process.env.LINKI_DB_PATH)
   : path.join(process.cwd(), "public");
 const DIR = path.join(DATA_DIR, "screenshots");
-const MAX_AGE_MS = 48 * 60 * 60 * 1000;
-const MAX_FILES = 200;
-
 function ensureDir() {
   fs.mkdirSync(DIR, { recursive: true });
-}
-
-function purgeOld() {
-  try {
-    const files = fs.readdirSync(DIR)
-      .map((f) => ({ f, t: fs.statSync(path.join(DIR, f)).mtimeMs }))
-      .sort((a, b) => b.t - a.t);
-    const now = Date.now();
-    files.forEach(({ f, t }, i) => {
-      if (i >= MAX_FILES || now - t > MAX_AGE_MS) {
-        try { fs.unlinkSync(path.join(DIR, f)); } catch { /* ignore */ }
-      }
-    });
-  } catch { /* ignore */ }
 }
 
 export async function saveScreenshot(page: Page, label: string, targetId?: string): Promise<void> {
   try {
     ensureDir();
-    purgeOld();
     const safe = label.replace(/[^a-z0-9_-]/gi, "_").slice(0, 60);
     const tid = targetId ? `${targetId}-` : "";
     const filename = `${Date.now()}-${tid}${safe}.png`;
     await page.screenshot({ path: path.join(DIR, filename), fullPage: false });
   } catch { /* never throw — screenshots are best-effort */ }
+}
+
+export function clearScreenshots(targetId?: string): number {
+  let deleted = 0;
+  try {
+    ensureDir();
+    const files = fs.readdirSync(DIR).filter((f) => f.endsWith(".png"));
+    for (const f of files) {
+      if (!targetId || f.includes(targetId)) {
+        try { fs.unlinkSync(path.join(DIR, f)); deleted++; } catch { /* ignore */ }
+      }
+    }
+  } catch { /* ignore */ }
+  return deleted;
 }
 
 export function listScreenshots(targetId?: string): Array<{ filename: string; url: string; ts: number; label: string }> {
@@ -51,8 +47,7 @@ export function listScreenshots(targetId?: string): Array<{ filename: string; ur
         const label = f.replace(/^\d+-/, "").replace(/[a-f0-9-]{36}-/, "").replace(/\.png$/, "").replace(/_/g, " ");
         return { filename: f, url: `/api/screenshots/${f}`, ts, label };
       })
-      .sort((a, b) => b.ts - a.ts)
-      .slice(0, MAX_FILES);
+      .sort((a, b) => b.ts - a.ts);
   } catch {
     return [];
   }
