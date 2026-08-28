@@ -3388,6 +3388,7 @@ export default function WorkflowDetailPage({
                       </th>
                       <th>Name</th>
                       <th>Company</th>
+                      <th>Connected</th>
                       <th>Step</th>
                       <th>Status</th>
                       <th>Next Action</th>
@@ -3422,6 +3423,14 @@ export default function WorkflowDetailPage({
                           {p.title && <p className="text-xs text-base-content/40 truncate max-w-40">{p.title}</p>}
                         </td>
                         <td className="text-xs text-base-content/60">{p.company ?? "—"}</td>
+                        <td>
+                          {p.degree === 1
+                            ? <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-success/15 text-success">connected</span>
+                            : p.connection_requested_at
+                            ? <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-warning/15 text-warning">pending</span>
+                            : <span className="text-[10px] text-base-content/25">—</span>
+                          }
+                        </td>
                         <td className="text-xs text-base-content/60">
                           {(() => {
                             const activeTrack = typeof selectedStep === "object" && selectedStep !== null ? selectedStep.track : null;
