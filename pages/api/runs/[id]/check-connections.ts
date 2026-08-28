@@ -1,4 +1,5 @@
 import type { NextApiRequest, NextApiResponse } from "next";
+import { randomUUID } from "crypto";
 import { getDb } from "@/lib/db";
 import { getSessionPage, saveSessionState } from "@/lib/linkedin/session";
 import { visitProfile } from "@/lib/linkedin/visit";
@@ -32,7 +33,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       for (const t of targets) {
         if (!t.linkedin_url) continue;
         try {
-          const result = await visitProfile(page, t.linkedin_url);
+          const result = await visitProfile(page, t.linkedin_url, t.id);
           const now = new Date().toISOString();
           if (result.isFirstDegree) {
             db.prepare("UPDATE targets SET degree = 1, connected_at = COALESCE(connected_at, ?) WHERE id = ?").run(now, t.id);
@@ -42,6 +43,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           if (result.messagingUrn) {
             db.prepare("UPDATE targets SET messaging_urn = ? WHERE id = ?").run(result.messagingUrn, t.id);
           }
+          const status = result.isFirstDegree ? "connected (1st degree)" : "not connected";
+          db.prepare(
+            "INSERT INTO activity_logs (id, target_id, type, body) VALUES (?, ?, 'other', ?)"
+          ).run(randomUUID(), t.id, `Connection check: ${status}`);
         } catch { /* skip individual failures */ }
       }
     } finally {
