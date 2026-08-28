@@ -2796,6 +2796,21 @@ export default function WorkflowDetailPage({
     }
   }
 
+  async function rerunProspect(runId: string, targetId: string) {
+    const res = await fetch(`/api/runs/${runId}/rerun`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ target_ids: [targetId] }),
+    });
+    if (res.ok) {
+      toast.success("Re-running from step 1");
+      setProspects((prev) => prev.map((p) => p.target_id === targetId ? { ...p, state: "in_progress" } : p));
+      refreshStats();
+    } else {
+      toast.error("Failed to rerun");
+    }
+  }
+
   async function retryProspect(runId: string, targetId: string) {
     const res = await fetch(`/api/runs/${runId}/retry`, {
       method: "POST",
@@ -2849,7 +2864,7 @@ export default function WorkflowDetailPage({
   }
 
   // Group target_ids by run_id, then fire one request per run
-  async function bulkAction(action: "retry" | "remove" | "unenroll" | "expedite", targetIds: string[]) {
+  async function bulkAction(action: "retry" | "rerun" | "remove" | "unenroll" | "expedite", targetIds: string[]) {
     const grouped: Record<string, string[]> = {};
     for (const tid of targetIds) {
       const p = prospects.find((x) => x.target_id === tid);
@@ -3263,6 +3278,7 @@ export default function WorkflowDetailPage({
                   const unenrollSel = sel.filter((p) => isActive && (p.state === "pending" || p.state === "in_progress"));
                   const expediteSel = sel.filter((p) => isActive && p.state === "in_progress" && p.next_step_at !== null && new Date(p.next_step_at) > new Date());
                   const removeSel = sel.filter((p) => p.state !== "completed");
+                  const rerunSel = sel.filter((p) => p.state === "completed" || p.state === "skipped");
                   const linkedinSel = sel.filter((p) => p.linkedin_url);
                   return (
                     <div className="absolute inset-0 flex items-center gap-2 px-3 bg-base-200 border border-base-300/50 rounded-lg z-10">
@@ -3281,6 +3297,14 @@ export default function WorkflowDetailPage({
                           onClick={() => bulkAction("retry", failedSel.map((p) => p.target_id))}
                         >
                           <RiRefreshLine size={12} /> Retry {failedSel.length} failed
+                        </button>
+                      )}
+                      {rerunSel.length > 0 && isActive && (
+                        <button
+                          className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-medium bg-primary/10 text-primary border border-primary/20 hover:bg-primary/20 transition-colors"
+                          onClick={() => bulkAction("rerun", rerunSel.map((p) => p.target_id))}
+                        >
+                          <RiRefreshLine size={12} /> Re-run {rerunSel.length} from start
                         </button>
                       )}
                       {expediteSel.length > 0 && (
@@ -3437,6 +3461,15 @@ export default function WorkflowDetailPage({
                                 title="Retry"
                                 onClick={() => retryProspect(p.run_id, p.target_id)}
                                 className="inline-flex items-center p-1 rounded text-base-content/20 hover:text-info hover:bg-info/10 transition-colors"
+                              >
+                                <RiRefreshLine size={13} />
+                              </button>
+                            )}
+                            {isActive && (p.state === "completed" || p.state === "skipped") && (
+                              <button
+                                title="Re-run from step 1"
+                                onClick={() => rerunProspect(p.run_id, p.target_id)}
+                                className="inline-flex items-center p-1 rounded text-base-content/20 hover:text-primary hover:bg-primary/10 transition-colors"
                               >
                                 <RiRefreshLine size={13} />
                               </button>
