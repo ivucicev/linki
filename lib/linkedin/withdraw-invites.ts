@@ -10,8 +10,8 @@ import { saveScreenshot } from "./screenshot";
 // then click the last N Withdraw buttons in DOM order (bottom = oldest).
 
 const WITHDRAW_INTERVAL_MS = 24 * 60 * 60 * 1000;
-const TARGET_PENDING = 150;
-const TRIGGER_PENDING = 180;
+const TARGET_PENDING = 169;  // leave room for 30 new sends (200 cap - 31 buffer)
+const TRIGGER_PENDING = 170; // fire as soon as there's no room for a full day of sends
 
 export function shouldWithdrawInvites(accountId: string): boolean {
   const db = getDb();
