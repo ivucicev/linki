@@ -477,6 +477,9 @@ function runMigrations(db: Database.Database) {
     "ALTER TABLE run_profile_tracks ADD COLUMN pending_message TEXT",
     "ALTER TABLE run_profile_tracks ADD COLUMN pending_subject TEXT",
     "ALTER TABLE run_profile_tracks ADD COLUMN approval_state TEXT",
+    // Connection rejection detection — set when check-connection finds no 1st badge and no Pending indicator
+    // despite connection_requested_at being set, meaning LinkedIn removed the invite (rejected or expired).
+    "ALTER TABLE targets ADD COLUMN connection_rejected_at TEXT",
   ];
   for (const sql of migrations) {
     try { db.exec(sql); } catch { /* column already exists */ }

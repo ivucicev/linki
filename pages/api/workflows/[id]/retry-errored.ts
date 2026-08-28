@@ -7,10 +7,13 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
   const db = getDb();
   const workflowId = req.query.id as string;
 
-  // Reset all failed tracks that have error_message across all active runs for this workflow
+  // Reset all terminal tracks with an error_message across all active runs for this workflow.
+  // Includes failed, skipped, and completed — all can carry error_message (e.g. timeout during
+  // a step that was eventually marked skipped/completed by the runner).
   const result = db.prepare(`
-    UPDATE run_profile_tracks SET state = 'in_progress', error_message = NULL, next_step_at = NULL
-    WHERE state = 'failed'
+    UPDATE run_profile_tracks SET state = 'pending', error_message = NULL, next_step_at = NULL,
+      pending_message = NULL, pending_subject = NULL, approval_state = NULL
+    WHERE state IN ('failed', 'skipped', 'completed')
       AND error_message IS NOT NULL
       AND run_profile_id IN (
         SELECT rp.id FROM run_profiles rp

@@ -32,21 +32,36 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     try {
       const result = await visitProfile(page, target.linkedin_url!, id);
       const now = new Date().toISOString();
+
+      // Read current state to detect rejection
+      const current = db.prepare("SELECT connection_requested_at FROM targets WHERE id = ?")
+        .get(id) as { connection_requested_at: string | null };
+      const wasRequestSent = !!current?.connection_requested_at;
+
+      let status: string;
       if (result.isFirstDegree) {
         db.prepare(
-          "UPDATE targets SET degree = 1, connected_at = COALESCE(connected_at, ?) WHERE id = ?"
+          "UPDATE targets SET degree = 1, connected_at = COALESCE(connected_at, ?), connection_rejected_at = NULL WHERE id = ?"
         ).run(now, id);
+        status = "connected (1st degree)";
+      } else if (result.isPending) {
+        // Still waiting — no change
+        status = "pending";
+      } else if (wasRequestSent) {
+        // Invite was sent but now gone — rejected or expired
+        db.prepare(
+          "UPDATE targets SET degree = NULL, connected_at = NULL, connection_requested_at = NULL, connection_rejected_at = ? WHERE id = ?"
+        ).run(now, id);
+        status = "invite rejected or expired";
       } else {
         db.prepare(
           "UPDATE targets SET degree = NULL, connected_at = NULL WHERE id = ?"
         ).run(id);
+        status = "not connected";
       }
       if (result.messagingUrn) {
-        db.prepare(
-          "UPDATE targets SET messaging_urn = ? WHERE id = ?"
-        ).run(result.messagingUrn, id);
+        db.prepare("UPDATE targets SET messaging_urn = ? WHERE id = ?").run(result.messagingUrn, id);
       }
-      const status = result.isFirstDegree ? "connected (1st degree)" : "not connected";
       db.prepare(
         "INSERT INTO activity_logs (id, target_id, type, body) VALUES (?, ?, 'other', ?)"
       ).run(randomUUID(), id, `Connection check: ${status}`);

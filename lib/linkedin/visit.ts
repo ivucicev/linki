@@ -31,25 +31,21 @@ import { saveScreenshot } from "./screenshot";
  * needed to message this person directly later without a name-search typeahead
  * — see lib/linkedin/message.ts. Returned as messagingUrn when found.
  */
-export async function visitProfile(page: Page, linkedinUrl: string, targetId?: string): Promise<{ isFirstDegree: boolean; messagingUrn: string | null }> {
+export async function visitProfile(page: Page, linkedinUrl: string, targetId?: string): Promise<{ isFirstDegree: boolean; isPending: boolean; messagingUrn: string | null }> {
   await page.goto(linkedinUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
   await page.waitForTimeout(3000 + Math.random() * 2000);
   await saveScreenshot(page, "visit_profile", targetId);
 
   const topCard = page.locator("main section").filter({ has: page.locator("h1, h2") }).first();
 
-  // Degree is determined by the badge text only — the Message link alone is not
-  // sufficient because LinkedIn also shows an InMail link (same /messaging/compose
-  // href) for 2nd/3rd-degree profiles. Only 1st-degree cards show the "1st" badge.
   const pageText = await topCard.innerText().catch(() => "");
   const isFirstDegree = /\b1st\b/.test(pageText);
+  const isPending = /\bPending\b/.test(pageText) || (await page.locator('button[aria-label*="Pending"]:visible').count()) > 0;
 
-  // Extract messagingUrn for direct messaging (only useful if actually 1st-degree,
-  // but we capture it regardless so it's available if degree status changes later).
   const messageLink = topCard.locator('a[href*="/messaging/compose"]').first();
   const messageHref = (await messageLink.count()) > 0 ? await messageLink.getAttribute("href").catch(() => null) : null;
   const urnMatch = messageHref?.match(/profileUrn=([^&]+)/);
   const messagingUrn = urnMatch ? decodeURIComponent(urnMatch[1]) : null;
 
-  return { isFirstDegree, messagingUrn };
+  return { isFirstDegree, isPending, messagingUrn };
 }

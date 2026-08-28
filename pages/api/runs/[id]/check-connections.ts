@@ -35,15 +35,26 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         try {
           const result = await visitProfile(page, t.linkedin_url, t.id);
           const now = new Date().toISOString();
+          const current = db.prepare("SELECT connection_requested_at FROM targets WHERE id = ?")
+            .get(t.id) as { connection_requested_at: string | null };
+          const wasRequestSent = !!current?.connection_requested_at;
+
+          let status: string;
           if (result.isFirstDegree) {
-            db.prepare("UPDATE targets SET degree = 1, connected_at = COALESCE(connected_at, ?) WHERE id = ?").run(now, t.id);
+            db.prepare("UPDATE targets SET degree = 1, connected_at = COALESCE(connected_at, ?), connection_rejected_at = NULL WHERE id = ?").run(now, t.id);
+            status = "connected (1st degree)";
+          } else if (result.isPending) {
+            status = "pending";
+          } else if (wasRequestSent) {
+            db.prepare("UPDATE targets SET degree = NULL, connected_at = NULL, connection_requested_at = NULL, connection_rejected_at = ? WHERE id = ?").run(now, t.id);
+            status = "invite rejected or expired";
           } else {
             db.prepare("UPDATE targets SET degree = NULL, connected_at = NULL WHERE id = ?").run(t.id);
+            status = "not connected";
           }
           if (result.messagingUrn) {
             db.prepare("UPDATE targets SET messaging_urn = ? WHERE id = ?").run(result.messagingUrn, t.id);
           }
-          const status = result.isFirstDegree ? "connected (1st degree)" : "not connected";
           db.prepare(
             "INSERT INTO activity_logs (id, target_id, type, body) VALUES (?, ?, 'other', ?)"
           ).run(randomUUID(), t.id, `Connection check: ${status}`);

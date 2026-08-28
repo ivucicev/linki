@@ -168,7 +168,7 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
               COALESCE(rt_li.next_step_at, rt_em.next_step_at) as next_step_at,
               COALESCE(rt_li.error_message, rt_em.error_message) as error_message,
               t.full_name, t.title, t.company, t.linkedin_url,
-              t.degree, t.connection_requested_at, t.connected_at, t.message_sent_at,
+              t.degree, t.connection_requested_at, t.connection_rejected_at, t.connected_at, t.message_sent_at,
               ws_li.step_type as li_step_type,
               ws_em.step_type as em_step_type,
               CASE
