@@ -6,6 +6,7 @@ import { resolveLinkedInAccount } from "@/lib/linkedin/resolve-account";
 
 // POST /api/targets/[id]/check-connection
 // Visits the contact's LinkedIn profile and updates degree + messaging_urn from live page.
+// Returns 202 immediately — processing happens in background to avoid gateway timeouts.
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "POST") return res.status(405).end();
 
@@ -21,35 +22,32 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const account = resolveLinkedInAccount(db, id, req.body?.account_id);
   if (!account) return res.status(400).json({ error: "No authenticated LinkedIn account" });
 
-  try {
+  // Return immediately
+  res.status(202).json({ ok: true });
+
+  // Process in background
+  (async () => {
     const page = await getSessionPage(account.id);
-    let result: { isFirstDegree: boolean; messagingUrn: string | null };
     try {
-      result = await visitProfile(page, target.linkedin_url);
+      const result = await visitProfile(page, target.linkedin_url!);
+      const now = new Date().toISOString();
+      if (result.isFirstDegree) {
+        db.prepare(
+          "UPDATE targets SET degree = 1, connected_at = COALESCE(connected_at, ?) WHERE id = ?"
+        ).run(now, id);
+      } else {
+        db.prepare(
+          "UPDATE targets SET degree = NULL, connected_at = NULL WHERE id = ?"
+        ).run(id);
+      }
+      if (result.messagingUrn) {
+        db.prepare(
+          "UPDATE targets SET messaging_urn = ? WHERE id = ?"
+        ).run(result.messagingUrn, id);
+      }
     } finally {
       await page.close();
+      await saveSessionState(account.id);
     }
-    await saveSessionState(account.id);
-
-    const now = new Date().toISOString();
-    if (result.isFirstDegree) {
-      db.prepare(
-        "UPDATE targets SET degree = 1, connected_at = COALESCE(connected_at, ?) WHERE id = ?"
-      ).run(now, id);
-    } else {
-      db.prepare(
-        "UPDATE targets SET degree = NULL, connected_at = NULL WHERE id = ?"
-      ).run(id);
-    }
-    if (result.messagingUrn) {
-      db.prepare(
-        "UPDATE targets SET messaging_urn = ? WHERE id = ?"
-      ).run(result.messagingUrn, id);
-    }
-
-    return res.json({ ok: true, isFirstDegree: result.isFirstDegree, messagingUrn: result.messagingUrn });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    return res.status(500).json({ error: message });
-  }
+  })().catch(() => {});
 }

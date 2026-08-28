@@ -2803,10 +2803,10 @@ export default function WorkflowDetailPage({
 
   async function checkConnection(targetId: string) {
     const res = await fetch(`/api/targets/${targetId}/check-connection`, { method: "POST" });
-    if (res.ok) {
-      const d = await res.json();
-      toast.success(d.isFirstDegree ? "Connected ✓" : "Not connected");
-      refreshProspects();
+    if (res.ok || res.status === 202) {
+      toast.success("Checking connection in background — result updates automatically");
+      setTimeout(() => refreshProspects(), 12000);
+      setTimeout(() => refreshProspects(), 25000);
     } else {
       const err = await res.json().catch(() => ({}));
       toast.error(err.error ?? "Check failed");
@@ -2914,8 +2914,14 @@ export default function WorkflowDetailPage({
         )
       );
     }
-    if (!results.every((r) => r.ok)) { toast.error("Some actions failed"); return; }
-    if (action === "retry") {
+    if (!results.every((r) => r.ok || r.status === 202)) { toast.error("Some actions failed"); return; }
+    if (action === "check-connections") {
+      toast.success(`Checking ${targetIds.length} connection${targetIds.length !== 1 ? "s" : ""} in background — results update automatically`);
+      // Refresh prospects several times as background job completes
+      setTimeout(() => refreshProspects(), 15000);
+      setTimeout(() => refreshProspects(), 35000);
+      setTimeout(() => refreshProspects(), 60000);
+    } else if (action === "retry") {
       toast.success(`Retried ${targetIds.length} prospect${targetIds.length !== 1 ? "s" : ""}`);
       setProspects((prev) => prev.map((p) => targetIds.includes(p.target_id) ? { ...p, state: "in_progress", error_message: null } : p));
     } else if (action === "expedite") {
