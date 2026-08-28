@@ -124,7 +124,7 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
         }
         return "EXISTS (SELECT 1 FROM run_profile_tracks rt_sf WHERE rt_sf.run_profile_id = rp.id AND rt_sf.state = ?)";
       });
-      const filteredStates = states.filter(s => !["completed","in_progress","failed","skipped"].includes(s));
+      const filteredStates = states.filter(s => !["completed","in_progress","failed","skipped","errors"].includes(s));
       conditions.push(`(${stateConditions.join(" OR ")})`);
       params.push(...filteredStates);
     }
