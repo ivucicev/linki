@@ -27,6 +27,7 @@ interface LiAccount {
   timezone: string; working_days: string;
   created_at: string;
   active_run_count: number;
+  li_pending: number | null;
 }
 
 interface EmailAccount {
@@ -53,7 +54,8 @@ export const getServerSideProps: GetServerSideProps = async ({ query }) => {
     .prepare(
       `SELECT a.id, a.name, a.email, a.is_authenticated, a.daily_connection_limit, a.daily_message_limit, a.daily_inmail_limit,
               a.active_hours_start, a.active_hours_end, a.timezone, a.working_days, a.created_at,
-              (SELECT COUNT(*) FROM runs r WHERE r.account_id = a.id AND r.status IN ('running', 'paused')) AS active_run_count
+              (SELECT COUNT(*) FROM runs r WHERE r.account_id = a.id AND r.status IN ('running', 'paused')) AS active_run_count,
+              a.li_pending
        FROM accounts a ORDER BY a.created_at DESC`
     )
     .all();
@@ -239,6 +241,20 @@ function LinkedInTab({ initialAccounts }: { initialAccounts: LiAccount[] }) {
   const [loginStage, setLoginStage] = useState<"creds" | "code" | "approve">("creds");
   const [challengeMsg, setChallengeMsg] = useState("");
   const [authLoading, setAuthLoading] = useState(false);
+  const [withdrawingId, setWithdrawingId] = useState<string | null>(null);
+
+  async function triggerWithdraw(accountId: string) {
+    setWithdrawingId(accountId);
+    try {
+      const r = await fetch(`/api/accounts/${accountId}/withdraw-invites`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ count: 30 }) });
+      if (r.ok) toast.success("Withdrawal queued (processing in background)");
+      else toast.error("Failed to queue withdrawal");
+    } catch {
+      toast.error("Network error");
+    } finally {
+      setWithdrawingId(null);
+    }
+  }
 
   function openAuthModal(account: LiAccount) {
     setAuthModal(account.id);
@@ -412,6 +428,15 @@ function LinkedInTab({ initialAccounts }: { initialAccounts: LiAccount[] }) {
                   onClick={() => openAuthModal(a)}
                 >
                   <RiShieldKeyholeLine size={12} /> Authenticate
+                </button>
+                <button
+                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-warning/10 text-warning border border-warning/20 hover:bg-warning/20 transition-colors disabled:opacity-50"
+                  onClick={() => triggerWithdraw(a.id)}
+                  disabled={withdrawingId === a.id}
+                  title="Withdraw 30 oldest pending invites"
+                >
+                  <RiArrowDownSLine size={12} />
+                  Withdraw{a.li_pending != null ? ` (${a.li_pending} pending)` : ""}
                 </button>
                 <button
                   className="inline-flex items-center p-1.5 rounded-lg text-base-content/40 hover:text-base-content hover:bg-base-300/50 transition-colors"

@@ -4,13 +4,14 @@ import { getDb } from "@/lib/db";
 import { getSessionPage, saveSessionState, markNeedsReauth } from "@/lib/linkedin/session";
 import { saveScreenshot } from "./screenshot";
 
-// Withdraw oldest N pending sent invitations to stay under the 200-invite cap.
-// Uses Voyager API to list pending invites (no DOM scroll needed), then DOM to
-// click Withdraw + confirm for each.
+// Withdraw oldest pending invitations to stay under LinkedIn's 200-invite cap.
+// Triggers at 180 pending, drains to 150 (withdraws the difference).
+// Uses Voyager API to list all pending invites without DOM scrolling,
+// then DOM to click Withdraw + confirm dialog per invite.
 
-const WITHDRAW_INTERVAL_MS = 24 * 60 * 60 * 1000; // once per day
-const WITHDRAW_PER_DAY = 30;
-const PENDING_THRESHOLD = 150; // only withdraw if pending count >= this
+const WITHDRAW_INTERVAL_MS = 24 * 60 * 60 * 1000;
+const TARGET_PENDING = 150;  // drain to this
+const TRIGGER_PENDING = 180; // fire when >= this
 
 export function shouldWithdrawInvites(accountId: string): boolean {
   const db = getDb();
@@ -18,25 +19,23 @@ export function shouldWithdrawInvites(accountId: string): boolean {
     | { withdraw_invites_at: string | null; li_pending: number | null }
     | undefined;
   if (!row) return false;
-  // Only bother if we know pending is high
-  if (row.li_pending !== null && row.li_pending < PENDING_THRESHOLD) return false;
+  if (row.li_pending !== null && row.li_pending < TRIGGER_PENDING) return false;
   if (!row.withdraw_invites_at) return true;
   return Date.now() - new Date(row.withdraw_invites_at).getTime() >= WITHDRAW_INTERVAL_MS;
 }
 
 interface PendingInvite {
   entityUrn: string;
-  inviteeProfileUrl: string | null; // /in/vanity
-  sentAt: number; // epoch ms
+  inviteeProfileUrl: string | null;
+  sentAt: number;
 }
 
-export async function withdrawOldestInvites(accountId: string, count = WITHDRAW_PER_DAY): Promise<number> {
+export async function withdrawOldestInvites(accountId: string, count?: number): Promise<number> {
   const db = getDb();
   const page = await getSessionPage(accountId);
   let withdrawn = 0;
 
   try {
-    // Navigate to sent invitations page (establishes cookies for Voyager fetch)
     await page.goto("https://www.linkedin.com/mynetwork/invitation-manager/sent/", {
       waitUntil: "domcontentloaded",
       timeout: 35000,
@@ -49,48 +48,49 @@ export async function withdrawOldestInvites(accountId: string, count = WITHDRAW_
       return 0;
     }
 
-    // Fetch pending invites via Voyager API (sorted oldest first by fetching all then reversing)
     const invites = await fetchSentInvites(page);
     if (!invites) {
       console.warn("[withdraw-invites] Voyager API failed — skipping");
       return 0;
     }
 
-    // Sort oldest first, take the ones to withdraw
-    const oldest = [...invites].sort((a, b) => a.sentAt - b.sentAt).slice(0, count);
+    // Withdraw enough to bring pending to TARGET_PENDING, or caller-specified count
+    const toWithdraw = count ?? Math.max(0, invites.length - TARGET_PENDING);
+    const oldest = [...invites].sort((a, b) => a.sentAt - b.sentAt).slice(0, toWithdraw);
     console.log(`[withdraw-invites] ${invites.length} pending, withdrawing ${oldest.length} oldest`);
 
     for (const invite of oldest) {
       try {
-        // Navigate to their profile where the Withdraw button is accessible
-        // OR use the invitation manager page and find by aria-label
-        const withdrawn_ok = await withdrawOneOnPage(page, invite.entityUrn, invite.inviteeProfileUrl);
-        if (withdrawn_ok) {
+        // Look up targetId for screenshot tagging
+        let targetId: string | undefined;
+        if (invite.inviteeProfileUrl) {
+          const vanity = invite.inviteeProfileUrl.replace(/^\/in\//, "").replace(/\/$/, "");
+          const t = db.prepare("SELECT id FROM targets WHERE linkedin_url LIKE ?").get(`%/in/${vanity}%`) as { id: string } | undefined;
+          targetId = t?.id;
+        }
+
+        const ok = await withdrawOneOnPage(page, invite.entityUrn, invite.inviteeProfileUrl, targetId);
+        if (ok) {
           withdrawn++;
-          // Mark withdrawn in DB — clears pending, sets cooldown, logs activity
           if (invite.inviteeProfileUrl) {
             const vanity = invite.inviteeProfileUrl.replace(/^\/in\//, "").replace(/\/$/, "");
             const now = new Date().toISOString();
-            const affected = db.prepare(
+            db.prepare(
               "UPDATE targets SET connection_requested_at = NULL, connection_withdrawn_at = ? WHERE linkedin_url LIKE ?"
             ).run(now, `%/in/${vanity}%`);
-            if (affected.changes > 0) {
-              const target = db.prepare("SELECT id FROM targets WHERE linkedin_url LIKE ?").get(`%/in/${vanity}%`) as { id: string } | undefined;
-              if (target) {
-                db.prepare(
-                  "INSERT INTO activity_logs (id, target_id, type, body) VALUES (?, ?, 'other', ?)"
-                ).run(randomUUID(), target.id, "Connection invite withdrawn (oldest pending — 3-week cooldown applied)");
-              }
+            if (targetId) {
+              db.prepare(
+                "INSERT INTO activity_logs (id, target_id, type, body) VALUES (?, ?, 'other', ?)"
+              ).run(randomUUID(), targetId, "Connection invite withdrawn (oldest pending — 3-week cooldown applied)");
             }
           }
           await page.waitForTimeout(1200 + Math.random() * 800);
         }
       } catch (e) {
-        console.warn("[withdraw-invites] Failed to withdraw invite:", e instanceof Error ? e.message : e);
+        console.warn("[withdraw-invites] Failed to withdraw:", e instanceof Error ? e.message : e);
       }
     }
 
-    // Update li_pending count
     db.prepare("UPDATE accounts SET li_pending = ? WHERE id = ?").run(invites.length - withdrawn, accountId);
   } finally {
     let url = "";
@@ -107,54 +107,46 @@ export async function withdrawOldestInvites(accountId: string, count = WITHDRAW_
   return withdrawn;
 }
 
-async function withdrawOneOnPage(page: Page, entityUrn: string, profileUrl: string | null): Promise<boolean> {
-  // Use the invitation manager page — find the withdraw link by its componentkey (entityUrn encoded)
-  // Simpler: find by aria-label containing the person's name isn't reliable, so navigate to
-  // invitation manager and click Withdraw for the specific invite URN via the data attribute.
-  // Fallback: scroll invitation manager and find by visible Withdraw links.
-
+async function withdrawOneOnPage(
+  page: Page,
+  entityUrn: string,
+  profileUrl: string | null,
+  targetId?: string
+): Promise<boolean> {
   await page.goto("https://www.linkedin.com/mynetwork/invitation-manager/sent/", {
     waitUntil: "domcontentloaded",
     timeout: 30000,
   });
   await page.waitForTimeout(1500);
 
-  // The withdraw link has aria-label="Withdraw invitation sent to [Name]"
-  // We identify the right one via the componentkey which encodes the member URN.
-  // entityUrn example: "urn:li:member:123456" or "urn:li:fsd_profile:ACoAA..."
-  // componentkey on the withdraw <a>: "ConnectButtonstate:invitation:urn:li:member:123456_pending" or similar
-
-  // Scroll down to find and load the item — for old invites we need to scroll
+  const memberId = entityUrn.split(":").pop() ?? "";
   let found = false;
-  for (let scroll = 0; scroll < 15 && !found; scroll++) {
-    // Try to find withdraw button whose componentkey contains the member ID from the URN
-    const memberId = entityUrn.split(":").pop() ?? "";
+
+  for (let scroll = 0; scroll < 20 && !found; scroll++) {
     const withdrawBtn = page.locator(`a[componentkey*="${memberId}"][aria-label*="Withdraw"]`).first();
     if (await withdrawBtn.count() > 0) {
       await withdrawBtn.scrollIntoViewIfNeeded();
-      await saveScreenshot(page, "withdraw_found_button");
+      await saveScreenshot(page, "withdraw_found_button", targetId);
       await withdrawBtn.click();
       await page.waitForTimeout(800);
 
-      // Confirm dialog
       const confirmBtn = page.locator('dialog[open] button[aria-label*="Withdraw"]').first();
       if (await confirmBtn.count() > 0) {
-        await saveScreenshot(page, "withdraw_confirm_dialog");
+        await saveScreenshot(page, "withdraw_confirm_dialog", targetId);
         await confirmBtn.click();
         await page.waitForTimeout(1000);
-        await saveScreenshot(page, "withdraw_confirmed");
-        found = true;
+        await saveScreenshot(page, "withdraw_confirmed", targetId);
       } else {
-        // Dialog didn't open — already withdrawn or error
-        found = true;
+        await saveScreenshot(page, "withdraw_no_dialog", targetId);
       }
+      found = true;
     } else {
-      // Scroll down to load more
       await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
       await page.waitForTimeout(1200);
     }
   }
 
+  if (!found) await saveScreenshot(page, "withdraw_not_found", targetId);
   return found;
 }
 
@@ -166,22 +158,18 @@ async function fetchSentInvites(page: Page): Promise<PendingInvite[] | null> {
       return a;
     }, {});
     const csrf = (cookies["JSESSIONID"] || "").replace(/"/g, "");
-
     const all: Array<{ entityUrn: string; inviteeProfileUrl: string | null; sentAt: number }> = [];
     let start = 0;
     const count = 100;
 
-    for (let page = 0; page < 5; page++) { // max 500 invites
+    for (let pg = 0; pg < 5; pg++) {
       let json: {
         included?: Array<{
           $type?: string;
           entityUrn?: string;
           sentTime?: number;
-          invitation?: string;
-          inviteeProfileUrl?: string;
           invitee?: { com_linkedin_voyager_identity_shared_MiniProfile?: { publicIdentifier?: string } };
         }>;
-        data?: { paging?: { total?: number } };
       };
       try {
         const r = await fetch(
@@ -208,11 +196,7 @@ async function fetchSentInvites(page: Page): Promise<PendingInvite[] | null> {
         if (x.entityUrn && (x.$type ?? "").toLowerCase().includes("invitation") && typeof x.sentTime === "number") {
           foundAny = true;
           const vanity = x.invitee?.com_linkedin_voyager_identity_shared_MiniProfile?.publicIdentifier ?? null;
-          all.push({
-            entityUrn: x.entityUrn,
-            inviteeProfileUrl: vanity ? `/in/${vanity}` : null,
-            sentAt: x.sentTime,
-          });
+          all.push({ entityUrn: x.entityUrn, inviteeProfileUrl: vanity ? `/in/${vanity}` : null, sentAt: x.sentTime });
         }
       }
       if (!foundAny || included.length < count) break;
