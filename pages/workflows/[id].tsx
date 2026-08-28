@@ -3263,9 +3263,18 @@ export default function WorkflowDetailPage({
                   const unenrollSel = sel.filter((p) => isActive && (p.state === "pending" || p.state === "in_progress"));
                   const expediteSel = sel.filter((p) => isActive && p.state === "in_progress" && p.next_step_at !== null && new Date(p.next_step_at) > new Date());
                   const removeSel = sel.filter((p) => p.state !== "completed");
+                  const linkedinSel = sel.filter((p) => p.linkedin_url);
                   return (
                     <div className="absolute inset-0 flex items-center gap-2 px-3 bg-base-200 border border-base-300/50 rounded-lg z-10">
                       <span className="text-xs text-base-content/50 flex-1">{selected.size} selected</span>
+                      {linkedinSel.length > 0 && (
+                        <button
+                          className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-medium bg-primary/10 text-primary border border-primary/20 hover:bg-primary/20 transition-colors"
+                          onClick={() => linkedinSel.forEach((p) => window.open(p.linkedin_url!, "_blank"))}
+                        >
+                          <RiLinkedinBoxLine size={12} /> Open {linkedinSel.length} profiles
+                        </button>
+                      )}
                       {failedSel.length > 0 && (
                         <button
                           className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-medium bg-info/10 text-info border border-info/20 hover:bg-info/20 transition-colors"
