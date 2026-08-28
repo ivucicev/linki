@@ -36,7 +36,9 @@ export async function sendConnectionRequest(page: Page, linkedinUrl: string): Pr
   } else {
     // Case 2: Connect is inside the "More" menu on the top card.
     // Scoped to topCard so nav-bar or sidebar More buttons are never matched.
-    const moreBtn = topCard.locator('button[aria-label="More"]:visible').first();
+    // The button has either aria-label="More" (icon-only variant) or visible text "More"
+    // (text variant) — both appear in the topCard depending on viewport.
+    const moreBtn = topCard.locator('button[aria-label="More"]:visible, button:has-text("More"):visible').first();
     await moreBtn.click();
     await page.waitForTimeout(800);
 
