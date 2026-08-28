@@ -14,24 +14,15 @@ export async function sendConnectionRequest(page: Page, linkedinUrl: string): Pr
   await page.goto(linkedinUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
   await page.waitForTimeout(2000 + Math.random() * 1000);
 
-  // Already connected? Primary signal: presence of the profile's "Message" link
-  // (only shown to 1st-degree connections) — an href attribute, not a CSS class
-  // or translated text, so it survives LinkedIn's class-name hashing and non-
-  // English UI languages. Falls back to the old text-scrape for accounts/layouts
-  // where that link isn't found as a plain <a href>.
+  // Already connected? Use the degree badge text (\b1st\b) as the sole signal —
+  // same approach as visit.ts. The message link (a[href*="/messaging/compose"])
+  // is NOT a reliable indicator: LinkedIn also shows an InMail button with that
+  // same href for 2nd/3rd-degree profiles, which caused AlreadyConnectedError
+  // to fire for non-connections and wrongly set degree=1 on them.
   //
-  // MUST be scoped to the visited person's own intro/top card — a page-wide
-  // search also matches "Message" links / "1st" badges belonging to OTHER
-  // people rendered elsewhere on the page (sidebar modules like "People also
-  // viewed"). For a non-connected target this false-positived AlreadyConnected,
-  // which skipped the real invite AND (via the message step that follows) sent
-  // a message to a random unrelated 1st-degree connection instead of the
-  // target — see CLAUDE.md / memory for the Jul 2026 incident. The top card is
-  // identified structurally as the section containing the page's own <h1> name
-  // heading, robust to class-name hashing. Mirrors the same fix in visit.ts.
-  const topCard = page.locator("main section").filter({ has: page.locator("h1") }).first();
-  const hasMessageLink = await topCard.locator('a[href*="/messaging/compose"]').first().count() > 0;
-  if (hasMessageLink) throw new AlreadyConnectedError("Already connected");
+  // Scoped to the top card (section containing the name h1/h2) to avoid matching
+  // "1st" badges of unrelated people in sidebar modules ("People also viewed").
+  const topCard = page.locator("main section").filter({ has: page.locator("h1, h2") }).first();
   const pageText = await topCard.innerText().catch(() => "");
   if (/\b1st\b/.test(pageText)) throw new AlreadyConnectedError("Already connected");
 
