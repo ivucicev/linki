@@ -1,6 +1,7 @@
 services:
   linki:
     image: ghcr.io/ivucicev/linki:latest
+    pull_policy: always
     # To build from source instead: comment out image above and uncomment below
     # build: .
     ports:
