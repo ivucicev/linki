@@ -6,34 +6,27 @@ export class PendingInviteError extends Error {}
 
 /**
  * Sends a LinkedIn connection request without a note.
- * Navigates to the profile page and clicks the Connect button.
- * Throws WeeklyLimitError if the weekly limit popup appears.
- * Throws AlreadyConnectedError / PendingInviteError if already in that state.
+ * All selectors scoped to the profile top card (main section containing h1/h2)
+ * to prevent accidentally clicking sidebar "People you may know" Connect buttons.
  */
 export async function sendConnectionRequest(page: Page, linkedinUrl: string): Promise<void> {
   await page.goto(linkedinUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
   await page.waitForTimeout(2000 + Math.random() * 1000);
 
-  // Already connected? Use the degree badge text (\b1st\b) as the sole signal —
-  // same approach as visit.ts. The message link (a[href*="/messaging/compose"])
-  // is NOT a reliable indicator: LinkedIn also shows an InMail button with that
-  // same href for 2nd/3rd-degree profiles, which caused AlreadyConnectedError
-  // to fire for non-connections and wrongly set degree=1 on them.
-  //
-  // Scoped to the top card (section containing the name h1/h2) to avoid matching
-  // "1st" badges of unrelated people in sidebar modules ("People also viewed").
+  // Scope all checks to the profile's own top card — avoids sidebar "People you may know"
+  // cards which also render Connect/Pending/Message buttons and caused ghost requests (Jul 2026).
   const topCard = page.locator("main section").filter({ has: page.locator("h1, h2") }).first();
   const pageText = await topCard.innerText().catch(() => "");
+
   if (/\b1st\b/.test(pageText)) throw new AlreadyConnectedError("Already connected");
 
-  // Pending?
   if (/\bPending\b/.test(pageText)) throw new PendingInviteError("Invitation already pending");
-  const pendingBtn = page.locator('button[aria-label*="Pending"]:visible');
+  const pendingBtn = topCard.locator('button[aria-label*="Pending"]:visible');
   if (await pendingBtn.count() > 0) throw new PendingInviteError("Invitation already pending");
 
-  // Case 1: Direct Connect link (primary CTA) — navigate to its href directly.
-  // Clicking fails because the Sales Nav overlay SVG intercepts pointer events.
-  const directConnect = page.locator('a[aria-label*="Invite"][aria-label*="to connect"]:visible, a[href*="custom-invite"]:visible').first();
+  // Case 1: Direct Connect link visible in top card.
+  // Scoped to topCard so sidebar "custom-invite" links are never matched.
+  const directConnect = topCard.locator('a[aria-label*="Invite"][aria-label*="to connect"]:visible, a[href*="custom-invite"]:visible').first();
   if (await directConnect.count() > 0) {
     const href = await directConnect.getAttribute("href");
     if (!href) throw new Error("Connect link has no href");
@@ -41,13 +34,13 @@ export async function sendConnectionRequest(page: Page, linkedinUrl: string): Pr
     await page.goto(inviteUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
     await page.waitForTimeout(1000);
   } else {
-    // Case 2: Connect is inside the "..." More menu
-    // LinkedIn has two "More" buttons on page: [0] = nav bar, [1] = profile card
-    const moreBtn = page.locator('button[aria-label="More"]:visible').nth(1);
+    // Case 2: Connect is inside the "More" menu on the top card.
+    // Scoped to topCard so nav-bar or sidebar More buttons are never matched.
+    const moreBtn = topCard.locator('button[aria-label="More"]:visible').first();
     await moreBtn.click();
     await page.waitForTimeout(800);
 
-    // Check for Pending in the menu — means invite was already sent
+    // Check for Pending in the menu
     const pendingMenuItem = page.locator('[role="menuitem"]:has-text("Pending"):visible');
     if (await pendingMenuItem.count() > 0) throw new PendingInviteError("Invitation already pending (found in More menu)");
 
