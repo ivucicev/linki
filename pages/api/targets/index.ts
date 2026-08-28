@@ -183,7 +183,7 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
 
   const SELECT = `SELECT t.id, t.linkedin_url, t.full_name, t.title, t.company, t.location,
           t.email, t.email_status, t.degree,
-          t.connection_requested_at, t.connected_at, t.message_sent_at, t.last_replied_at,
+          t.connection_requested_at, t.connection_withdrawn_at, t.connected_at, t.message_sent_at, t.last_replied_at,
           t.apollo_enriched_at, t.seniority, t.created_at
    FROM targets t`;
 

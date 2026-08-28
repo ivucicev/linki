@@ -115,6 +115,7 @@ interface Prospect {
   degree: number | null;
   connection_requested_at: string | null;
   connection_rejected_at: string | null;
+  connection_withdrawn_at: string | null;
   connected_at: string | null;
   message_sent_at: string | null;
 }
@@ -3435,6 +3436,8 @@ export default function WorkflowDetailPage({
                             ? <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-success/15 text-success">connected</span>
                             : p.connection_rejected_at
                             ? <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-error/15 text-error" title={`Rejected/expired ${new Date(p.connection_rejected_at).toLocaleDateString()}`}>rejected</span>
+                            : p.connection_withdrawn_at
+                            ? <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-base-content/10 text-base-content/40" title={`Withdrawn ${new Date(p.connection_withdrawn_at).toLocaleDateString()}`}>withdrawn</span>
                             : p.connection_requested_at
                             ? <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-warning/15 text-warning">pending</span>
                             : <span className="text-[10px] text-base-content/25">—</span>

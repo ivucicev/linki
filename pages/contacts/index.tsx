@@ -26,6 +26,7 @@ interface Contact {
   phone: string | null;
   degree: number | null;
   connection_requested_at: string | null;
+  connection_withdrawn_at: string | null;
   connected_at: string | null;
   message_sent_at: string | null;
   last_replied_at: string | null;
@@ -65,6 +66,9 @@ function ConnectionIcon({ t }: { t: Contact }) {
   }
   if (t.connection_requested_at) {
     return <span title="Request sent" className="text-warning"><RiUserAddLine size={14} /></span>;
+  }
+  if (t.connection_withdrawn_at) {
+    return <span title={`Withdrawn ${new Date(t.connection_withdrawn_at).toLocaleDateString()}`} className="text-base-content/25"><RiUserLine size={14} /></span>;
   }
   return (
     <span title={t.degree === 2 ? "2nd degree" : t.degree === 3 ? "3rd degree" : "Not connected"} className="text-base-content/20">

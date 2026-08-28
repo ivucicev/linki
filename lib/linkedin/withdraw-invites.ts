@@ -159,6 +159,7 @@ export async function withdrawOldestInvites(accountId: string, count?: number): 
 
         if (ok) {
           withdrawn++;
+          console.log(`[withdraw-invites] Withdrew #${withdrawn}, profileUrl=${profileUrl ?? "null"}`);
           if (profileUrl) {
             const vanity = profileUrl.replace(/^\/in\//, "").replace(/\/$/, "");
             const now = new Date().toISOString();
@@ -170,7 +171,11 @@ export async function withdrawOldestInvites(accountId: string, count?: number): 
               db.prepare(
                 "INSERT INTO activity_logs (id, target_id, type, body) VALUES (?, ?, 'other', ?)"
               ).run(randomUUID(), t.id, "Connection invite withdrawn (oldest pending — 3-week cooldown applied)");
+            } else {
+              console.warn(`[withdraw-invites] No target found for vanity: ${vanity}`);
             }
+          } else {
+            console.warn("[withdraw-invites] No profile URL found in card — activity log skipped");
           }
           await page.waitForTimeout(800 + Math.random() * 600);
         }
