@@ -151,26 +151,23 @@ async function withdrawOneOnPage(
 }
 
 async function fetchSentInvites(page: Page): Promise<PendingInvite[] | null> {
-  return page.evaluate(async (): Promise<PendingInvite[] | null> => {
+  const result = await page.evaluate(async (): Promise<{ invites: Array<{ entityUrn: string; inviteeProfileUrl: string | null; sentAt: number }>; debugSample: string } | null> => {
     const cookies = document.cookie.split("; ").reduce((a: Record<string, string>, c) => {
       const i = c.indexOf("=");
       if (i > 0) a[c.slice(0, i)] = c.slice(i + 1);
       return a;
     }, {});
     const csrf = (cookies["JSESSIONID"] || "").replace(/"/g, "");
+    if (!csrf) return null;
+
     const all: Array<{ entityUrn: string; inviteeProfileUrl: string | null; sentAt: number }> = [];
     let start = 0;
     const count = 100;
+    let debugSample = "";
 
     for (let pg = 0; pg < 5; pg++) {
-      let json: {
-        included?: Array<{
-          $type?: string;
-          entityUrn?: string;
-          sentTime?: number;
-          invitee?: { com_linkedin_voyager_identity_shared_MiniProfile?: { publicIdentifier?: string } };
-        }>;
-      };
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let json: any;
       try {
         const r = await fetch(
           `https://www.linkedin.com/voyager/api/relationships/sentInvitation/v2?start=${start}&count=${count}&sortType=DATE_CREATED`,
@@ -184,25 +181,58 @@ async function fetchSentInvites(page: Page): Promise<PendingInvite[] | null> {
             credentials: "include",
           }
         );
-        if (!r.ok) break;
+        if (!r.ok) {
+          debugSample = `HTTP ${r.status}`;
+          break;
+        }
         json = await r.json();
-      } catch {
+      } catch (e) {
+        debugSample = String(e);
         break;
       }
 
-      const included = json.included ?? [];
-      let foundAny = false;
-      for (const x of included) {
-        if (x.entityUrn && (x.$type ?? "").toLowerCase().includes("invitation") && typeof x.sentTime === "number") {
-          foundAny = true;
-          const vanity = x.invitee?.com_linkedin_voyager_identity_shared_MiniProfile?.publicIdentifier ?? null;
-          all.push({ entityUrn: x.entityUrn, inviteeProfileUrl: vanity ? `/in/${vanity}` : null, sentAt: x.sentTime });
-        }
+      // Capture shape of first response for debugging
+      if (pg === 0 && !debugSample) {
+        const topKeys = Object.keys(json);
+        const included0 = (json.included ?? json.elements ?? [])[0];
+        debugSample = JSON.stringify({ topKeys, included0keys: included0 ? Object.keys(included0) : [], included0type: included0?.["$type"], included0sentTime: included0?.sentTime, included0createdAt: included0?.createdAt });
       }
-      if (!foundAny || included.length < count) break;
+
+      // Try both normalized (included) and non-normalized (elements/data.elements) shapes
+      const candidates: unknown[] = json.included ?? json.elements ?? (json.data as { elements?: unknown[] })?.elements ?? [];
+      let foundAny = false;
+      for (const x of candidates as Record<string, unknown>[]) {
+        const urn = (x.entityUrn ?? x.invitationUrn) as string | undefined;
+        const type = ((x["$type"] ?? x.type ?? "") as string).toLowerCase();
+        // Accept any item that has an urn and looks like an invitation
+        if (!urn) continue;
+        if (candidates.length > 0 && !type.includes("invitation") && !type.includes("sentedinvit")) continue;
+        // sentTime, createdAt, sentAt — try all
+        const sentAt = (x.sentTime ?? x.createdAt ?? x.sentAt) as number | string | undefined;
+        const ts = typeof sentAt === "number" ? sentAt : sentAt ? new Date(sentAt as string).getTime() : Date.now();
+        // invitee profile — may be nested or flat publicIdentifier
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const invitee = x.invitee as any;
+        const vanity: string | null =
+          invitee?.com_linkedin_voyager_identity_shared_MiniProfile?.publicIdentifier ??
+          invitee?.miniProfile?.publicIdentifier ??
+          invitee?.publicIdentifier ??
+          (x.inviteePublicIdentifier as string | undefined) ??
+          null;
+        all.push({ entityUrn: urn, inviteeProfileUrl: vanity ? `/in/${vanity}` : null, sentAt: ts });
+        foundAny = true;
+      }
+      if (!foundAny || candidates.length < count) break;
       start += count;
     }
 
-    return all;
+    return { invites: all, debugSample };
   });
+
+  if (!result) {
+    console.warn("[withdraw-invites] fetchSentInvites: evaluate returned null (no CSRF?)");
+    return null;
+  }
+  console.log(`[withdraw-invites] Voyager debug: ${result.debugSample}`);
+  return result.invites;
 }
