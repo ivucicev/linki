@@ -1,4 +1,5 @@
 import type { Page } from "playwright";
+import { saveScreenshot } from "./screenshot";
 
 export class WeeklyLimitError extends Error {}
 export class AlreadyConnectedError extends Error {}
@@ -9,49 +10,71 @@ export class PendingInviteError extends Error {}
  * All selectors scoped to the profile top card (main section containing h1/h2)
  * to prevent accidentally clicking sidebar "People you may know" Connect buttons.
  */
-export async function sendConnectionRequest(page: Page, linkedinUrl: string): Promise<void> {
+export async function sendConnectionRequest(page: Page, linkedinUrl: string, targetId?: string): Promise<void> {
   await page.goto(linkedinUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
   await page.waitForTimeout(2000 + Math.random() * 1000);
+  await saveScreenshot(page, "connect_page_loaded", targetId);
 
   // Scope all checks to the profile's own top card — avoids sidebar "People you may know"
   // cards which also render Connect/Pending/Message buttons and caused ghost requests (Jul 2026).
   const topCard = page.locator("main section").filter({ has: page.locator("h1, h2") }).first();
   const pageText = await topCard.innerText().catch(() => "");
 
-  if (/\b1st\b/.test(pageText)) throw new AlreadyConnectedError("Already connected");
+  if (/\b1st\b/.test(pageText)) {
+    await saveScreenshot(page, "connect_already_connected", targetId);
+    throw new AlreadyConnectedError("Already connected");
+  }
 
-  if (/\bPending\b/.test(pageText)) throw new PendingInviteError("Invitation already pending");
+  if (/\bPending\b/.test(pageText)) {
+    await saveScreenshot(page, "connect_pending_badge", targetId);
+    throw new PendingInviteError("Invitation already pending");
+  }
   const pendingBtn = topCard.locator('button[aria-label*="Pending"]:visible');
-  if (await pendingBtn.count() > 0) throw new PendingInviteError("Invitation already pending");
+  if (await pendingBtn.count() > 0) {
+    await saveScreenshot(page, "connect_pending_button", targetId);
+    throw new PendingInviteError("Invitation already pending");
+  }
 
   // Case 1: Direct Connect link visible in top card.
   // Scoped to topCard so sidebar "custom-invite" links are never matched.
   const directConnect = topCard.locator('a[aria-label*="Invite"][aria-label*="to connect"]:visible, a[href*="custom-invite"]:visible').first();
   if (await directConnect.count() > 0) {
+    await saveScreenshot(page, "connect_direct_link_found", targetId);
     const href = await directConnect.getAttribute("href");
     if (!href) throw new Error("Connect link has no href");
     const inviteUrl = href.startsWith("http") ? href : `https://www.linkedin.com${href}`;
     await page.goto(inviteUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
     await page.waitForTimeout(1000);
+    await saveScreenshot(page, "connect_invite_page", targetId);
   } else {
     // Case 2: Connect is inside the "More" menu on the top card.
     // Scoped to topCard so nav-bar or sidebar More buttons are never matched.
     // The button has either aria-label="More" (icon-only variant) or visible text "More"
     // (text variant) — both appear in the topCard depending on viewport.
     const moreBtn = topCard.locator('button[aria-label="More"]:visible, button:has-text("More"):visible').first();
+    await saveScreenshot(page, "connect_opening_more_menu", targetId);
     await moreBtn.click();
     await page.waitForTimeout(800);
+    await saveScreenshot(page, "connect_more_menu_open", targetId);
 
     // Check for Pending in the menu
     const pendingMenuItem = page.locator('[role="menuitem"]:has-text("Pending"):visible');
-    if (await pendingMenuItem.count() > 0) throw new PendingInviteError("Invitation already pending (found in More menu)");
+    if (await pendingMenuItem.count() > 0) {
+      await saveScreenshot(page, "connect_pending_in_menu", targetId);
+      throw new PendingInviteError("Invitation already pending (found in More menu)");
+    }
 
     const connectOption = page.locator('[role="menuitem"]:has-text("Connect"):visible');
-    if (await connectOption.count() === 0) throw new Error("Connect option not found in More menu");
+    if (await connectOption.count() === 0) {
+      await saveScreenshot(page, "connect_option_not_found", targetId);
+      throw new Error("Connect option not found in More menu");
+    }
+    await saveScreenshot(page, "connect_clicking_connect_option", targetId);
     await connectOption.first().click();
   }
 
   await page.waitForTimeout(1000);
+  await saveScreenshot(page, "connect_send_dialog", targetId);
 
   // Click "Send without a note" / "Send now"
   const sendBtn = page.locator(
@@ -60,15 +83,20 @@ export async function sendConnectionRequest(page: Page, linkedinUrl: string): Pr
   if (await sendBtn.count() > 0) {
     await sendBtn.first().click({ force: true });
     await page.waitForTimeout(1500);
+    await saveScreenshot(page, "connect_after_send", targetId);
   }
 
   // Check for weekly limit popup
   const limitPopup = page.locator('div[class*="ip-fuse-limit-alert__warning"]');
-  if (await limitPopup.count() > 0) throw new WeeklyLimitError("Weekly connection limit reached");
+  if (await limitPopup.count() > 0) {
+    await saveScreenshot(page, "connect_weekly_limit", targetId);
+    throw new WeeklyLimitError("Weekly connection limit reached");
+  }
 
   // Check for error toast
   const errorToast = page.locator('div[data-test-artdeco-toast-item-type="error"]:visible');
   if (await errorToast.count() > 0) {
+    await saveScreenshot(page, "connect_error_toast", targetId);
     const msg = await errorToast.innerText();
     throw new Error(`Connection error: ${msg.trim()}`);
   }
