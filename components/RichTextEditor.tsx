@@ -109,7 +109,20 @@ export default function RichTextEditor({ value, onChange, placeholder, className
     if (!file) return;
     const reader = new FileReader();
     reader.onload = () => {
-      editor?.chain().focus().setImage({ src: reader.result as string }).run();
+      // Determine natural width, cap at 200px for signatures
+      const img = new window.Image();
+      img.onload = () => {
+        const w = Math.min(img.naturalWidth || 200, 200);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        editor?.chain().focus().setImage({ src: reader.result as string, width: w } as any).run();
+        setImgWidth(String(w));
+      };
+      img.onerror = () => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        editor?.chain().focus().setImage({ src: reader.result as string, width: 150 } as any).run();
+        setImgWidth("150");
+      };
+      img.src = reader.result as string;
     };
     reader.readAsDataURL(file);
     e.target.value = "";
@@ -196,7 +209,8 @@ export default function RichTextEditor({ value, onChange, placeholder, className
       <style>{`
         .tiptap p { margin: 0 0 4px; }
         .tiptap p:last-child { margin-bottom: 0; }
-        .tiptap img { max-width: 100%; display: inline-block; }
+        .tiptap img { max-width: 100%; height: auto; display: inline-block; vertical-align: middle; }
+        .tiptap img[width] { max-width: none; }
         .tiptap a { color: #5aa2ff; text-decoration: underline; }
         .tiptap ul { list-style: disc; padding-left: 1.25rem; }
         .tiptap ol { list-style: decimal; padding-left: 1.25rem; }
