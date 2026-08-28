@@ -3403,6 +3403,17 @@ export default function WorkflowDetailPage({
                         </td>
                         <td onClick={(e) => e.stopPropagation()}>
                           <div className="flex items-center gap-0.5">
+                            {p.linkedin_url && (
+                              <a
+                                href={p.linkedin_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                title="Open LinkedIn profile"
+                                className="inline-flex items-center p-1 rounded text-base-content/20 hover:text-primary hover:bg-primary/10 transition-colors"
+                              >
+                                <RiLinkedinBoxLine size={13} />
+                              </a>
+                            )}
                             {isActive && p.state === "in_progress" && p.next_step_at !== null && new Date(p.next_step_at) > new Date() && (
                               <button
                                 title="Execute next action now"
