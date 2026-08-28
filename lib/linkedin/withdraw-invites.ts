@@ -42,46 +42,102 @@ export async function withdrawOldestInvites(accountId: string, count?: number): 
       return 0;
     }
 
-    // Scroll to bottom, triggering lazy-load of all invites (oldest at bottom)
-    let prevHeight = 0;
-    for (let i = 0; i < 60; i++) {
+    // Scroll until no new Withdraw buttons appear (lazy-load complete).
+    // Using button count as termination — more reliable than page height
+    // because height updates before content renders, causing early exits.
+    const btnSel = '[aria-label*="Withdraw"]';
+    let prevCount = -1;
+    let stableRounds = 0;
+    for (let i = 0; i < 100; i++) {
       await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-      await page.waitForTimeout(1200);
-      const h = await page.evaluate(() => document.body.scrollHeight);
-      if (h === prevHeight) break;
-      prevHeight = h;
+      await page.waitForTimeout(2000);
+      const curCount = await page.locator(btnSel).count();
+      console.log(`[withdraw-invites] Scroll ${i + 1}: ${curCount} buttons`);
+      if (curCount === prevCount) {
+        stableRounds++;
+        if (stableRounds >= 2) break; // stable for 2 rounds = truly at bottom
+      } else {
+        stableRounds = 0;
+      }
+      prevCount = curCount;
     }
     await saveScreenshot(page, "withdraw_scrolled_to_bottom");
 
-    // Count all visible Withdraw buttons — each represents one pending invite
-    const btnSel = '[aria-label*="Withdraw"]';
-    const total = await page.locator(btnSel).count();
-    console.log(`[withdraw-invites] ${total} pending, will withdraw ${count ?? Math.max(0, total - TARGET_PENDING)} oldest`);
-    db.prepare("UPDATE accounts SET li_pending = ? WHERE id = ?").run(total, accountId);
+    // Extract date from each card to ensure we withdraw truly oldest, not just last in DOM.
+    // LinkedIn shows "Sent X days/weeks ago" text in each card.
+    interface CardData { profileUrl: string | null; daysAgo: number; btnIndex: number; }
+    const cardData = await page.evaluate((sel: string): CardData[] => {
+      const btns = Array.from(document.querySelectorAll(sel));
+      return btns.map((btn, idx) => {
+        const card = btn.closest("li, article, [data-view-name]") ?? btn.parentElement?.parentElement ?? btn.parentElement;
+        const link = card?.querySelector<HTMLAnchorElement>('a[href*="/in/"]');
+        const profileUrl = link?.pathname ?? null;
+        // Parse "Sent X days/weeks/months ago" — also check <time datetime>
+        let daysAgo = 9999;
+        const timeEl = card?.querySelector<HTMLTimeElement>("time[datetime]");
+        if (timeEl?.dateTime) {
+          const ms = Date.now() - new Date(timeEl.dateTime).getTime();
+          daysAgo = ms / 86400000;
+        } else {
+          const text = card?.textContent ?? "";
+          const m = text.match(/(\d+)\s+(day|week|month|year)s?\s+ago/i);
+          if (m) {
+            const n = parseInt(m[1]);
+            const unit = m[2].toLowerCase();
+            daysAgo = unit === "day" ? n : unit === "week" ? n * 7 : unit === "month" ? n * 30 : n * 365;
+          }
+        }
+        return { profileUrl, daysAgo, btnIndex: idx };
+      });
+    }, btnSel);
 
+    const total = cardData.length;
+    // Sort oldest first (highest daysAgo)
+    const oldest = [...cardData].sort((a, b) => b.daysAgo - a.daysAgo);
     const toWithdraw = count ?? Math.max(0, total - TARGET_PENDING);
+    console.log(`[withdraw-invites] ${total} loaded, withdrawing ${toWithdraw} oldest (most recent of those: ${oldest[toWithdraw - 1]?.daysAgo?.toFixed(0)} days ago)`);
+    db.prepare("UPDATE accounts SET li_pending = ? WHERE id = ?").run(total, accountId);
     if (toWithdraw === 0) return 0;
 
-    // Withdraw from the bottom up (oldest first).
-    // After each withdrawal the card disappears, so always re-query and take last.
+    // Withdraw each oldest card. Re-query each iteration since DOM shifts after removal.
     for (let i = 0; i < toWithdraw; i++) {
       try {
+        // Re-extract to get current DOM state (indices shift after each withdrawal)
+        const current = await page.evaluate((sel: string): CardData[] => {
+          const btns = Array.from(document.querySelectorAll(sel));
+          return btns.map((btn, idx) => {
+            const card = btn.closest("li, article, [data-view-name]") ?? btn.parentElement?.parentElement ?? btn.parentElement;
+            const link = card?.querySelector<HTMLAnchorElement>('a[href*="/in/"]');
+            const profileUrl = link?.pathname ?? null;
+            let daysAgo = 9999;
+            const timeEl = card?.querySelector<HTMLTimeElement>("time[datetime]");
+            if (timeEl?.dateTime) {
+              const ms = Date.now() - new Date(timeEl.dateTime).getTime();
+              daysAgo = ms / 86400000;
+            } else {
+              const text = card?.textContent ?? "";
+              const m = text.match(/(\d+)\s+(day|week|month|year)s?\s+ago/i);
+              if (m) {
+                const n = parseInt(m[1]);
+                const unit = m[2].toLowerCase();
+                daysAgo = unit === "day" ? n : unit === "week" ? n * 7 : unit === "month" ? n * 30 : n * 365;
+              }
+            }
+            return { profileUrl, daysAgo, btnIndex: idx };
+          });
+        }, btnSel);
+
+        if (current.length === 0) break;
+        // Pick the oldest remaining card
+        const target = [...current].sort((a, b) => b.daysAgo - a.daysAgo)[0];
+        const profileUrl = target.profileUrl;
+
         const btns = page.locator(btnSel);
-        const remCount = await btns.count();
-        if (remCount === 0) break;
+        const btn = btns.nth(target.btnIndex);
 
-        const lastBtn = btns.nth(remCount - 1);
-
-        // Extract profile URL from the card before clicking
-        const profileUrl = await lastBtn.evaluate((el: Element) => {
-          const card = el.closest("li, article, [data-view-name]") ?? el.parentElement?.parentElement;
-          const link = card?.querySelector<HTMLAnchorElement>('a[href*="/in/"]');
-          return link?.pathname ?? null;
-        });
-
-        await lastBtn.scrollIntoViewIfNeeded();
+        await btn.scrollIntoViewIfNeeded();
         await saveScreenshot(page, "withdraw_found_button");
-        await lastBtn.click();
+        await btn.click();
         await page.waitForTimeout(800);
 
         // Confirm dialog
@@ -97,7 +153,7 @@ export async function withdrawOldestInvites(accountId: string, count?: number): 
           // Some cards withdraw without dialog; check if count dropped
           await page.waitForTimeout(600);
           const newCount = await page.locator(btnSel).count();
-          ok = newCount < remCount;
+          ok = newCount < current.length;
           await saveScreenshot(page, ok ? "withdraw_confirmed_no_dialog" : "withdraw_no_dialog");
         }
 
