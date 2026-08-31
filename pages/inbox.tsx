@@ -354,6 +354,7 @@ export default function InboxPage() {
   const [selectedReply, setSelectedReply] = useState<InboxReply | null>(null);
   const [reclassifyingAll, setReclassifyingAll] = useState(false);
   const [backfilling, setBackfilling] = useState(false);
+  const [syncingEmail, setSyncingEmail] = useState(false);
   // Open-core: AI reply classification + backfill are premium (ee/). Replies are still
   // shown; only the AI action controls are gated behind an upgrade.
   const [hasPremium, setHasPremium] = useState(true);
@@ -361,6 +362,21 @@ export default function InboxPage() {
     fetch("/api/premium-status").then((r) => r.ok ? r.json() : null)
       .then((d) => { if (d) setHasPremium(!!d.hasPremium); }).catch(() => {});
   }, []);
+
+  async function handleSyncEmail() {
+    setSyncingEmail(true);
+    try {
+      const r = await fetch("/api/inbox/sync-email", { method: "POST" });
+      if (!r.ok) throw new Error("Sync failed");
+      toast.success("Email sync started — results will appear shortly");
+      setTimeout(() => load(), 15000);
+      setTimeout(() => load(), 35000);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Sync failed");
+    } finally {
+      setSyncingEmail(false);
+    }
+  }
 
   async function handleBackfill() {
     setBackfilling(true);
@@ -457,6 +473,15 @@ export default function InboxPage() {
           <p className="text-base-content/40 text-sm mt-0.5">Contacts who replied to your outreach</p>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            onClick={handleSyncEmail}
+            disabled={syncingEmail}
+            title="Manually trigger IMAP sync for all email accounts"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-base-200 border border-base-300/50 text-base-content/70 hover:bg-base-300/50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          >
+            {syncingEmail ? <RiLoader4Line size={13} className="animate-spin" /> : <RiMailLine size={13} />}
+            {syncingEmail ? "Syncing…" : "Sync email"}
+          </button>
           {hasPremium ? (
             <>
               <button
