@@ -198,6 +198,16 @@ export async function syncEmailInbox(emailAccountId: string): Promise<{ replies:
 
   const allTargets = pendingTargets.length > 0 ? pendingTargets : fallbackTargets;
 
+  // Debug: show what's in the DB regardless of filters
+  const debugCounts = db.prepare(`
+    SELECT
+      (SELECT COUNT(*) FROM targets WHERE email IS NOT NULL) as total_with_email,
+      (SELECT COUNT(*) FROM targets WHERE email_replied_at IS NOT NULL) as already_replied,
+      (SELECT COUNT(*) FROM run_profile_tracks WHERE track = 'email') as email_tracks_total,
+      (SELECT COUNT(*) FROM run_profile_tracks WHERE track = 'email' AND state = 'completed') as email_tracks_completed,
+      (SELECT COUNT(*) FROM run_profile_tracks WHERE track = 'email' AND state = 'pending') as email_tracks_pending
+  `).get() as Record<string, number>;
+  console.log(`[email-inbox] DB debug:`, JSON.stringify(debugCounts));
   console.log(`[email-inbox] Account ${emailAccountId}: ${pendingTargets.length} matched, ${fallbackTargets.length} fallback, checking ${allTargets.length} total`);
 
   if (allTargets.length === 0) {
