@@ -165,26 +165,41 @@ export async function syncEmailInbox(emailAccountId: string): Promise<{ replies:
     return { replies: 0, bounces: 0 };
   }
 
-  // Leads that were emailed via this account and haven't replied yet
+  // Leads that were emailed via this account and haven't replied yet.
+  // Cast wide: any target with message_sent_at via this account, regardless of
+  // campaign track state — a reply can arrive before the next step fires.
   const pendingTargets = db.prepare(`
     SELECT DISTINCT t.id, t.email
     FROM targets t
     JOIN run_profiles rp ON rp.target_id = t.id
-    JOIN run_profile_tracks rt ON rt.run_profile_id = rp.id
     WHERE t.email IS NOT NULL
       AND t.email_replied_at IS NULL
       AND t.email_status != 'invalid'
-      AND rt.track = 'email'
-      AND rt.state NOT IN ('pending')
+      AND t.message_sent_at IS NOT NULL
       AND rp.email_account_id = ?
   `).all(emailAccountId) as { id: string; email: string }[];
 
-  if (pendingTargets.length === 0) {
+  // Fallback: if email_account_id not tracked on run_profiles, check ALL
+  // emailed targets against this mailbox (less precise but catches orphans).
+  const fallbackTargets = pendingTargets.length === 0
+    ? (db.prepare(`
+        SELECT DISTINCT t.id, t.email
+        FROM targets t
+        WHERE t.email IS NOT NULL
+          AND t.email_replied_at IS NULL
+          AND t.email_status != 'invalid'
+          AND t.message_sent_at IS NOT NULL
+      `).all() as { id: string; email: string }[])
+    : [];
+
+  const allTargets = pendingTargets.length > 0 ? pendingTargets : fallbackTargets;
+
+  console.log(`[email-inbox] Account ${emailAccountId}: ${pendingTargets.length} matched targets, ${fallbackTargets.length} fallback targets, checking ${allTargets.length} total`);
+
+  if (allTargets.length === 0) {
     db.prepare("UPDATE email_accounts SET inbox_synced_at = datetime('now') WHERE id = ?").run(emailAccountId);
     return { replies: 0, bounces: 0 };
   }
-
-  console.log(`[email-inbox] Checking ${pendingTargets.length} leads via IMAP FROM search`);
 
   const imapUser = account.imap_username ?? account.username;
   const imapPass = decryptSecret(account.imap_password) ?? decryptSecret(account.password)!;
@@ -220,7 +235,7 @@ export async function syncEmailInbox(emailAccountId: string): Promise<{ replies:
 
         // ── Reply detection: one FROM search per lead ──────────────────────────
         // Run sequentially — the imap library serialises commands over one TCP connection
-        for (const target of pendingTargets) {
+        for (const target of allTargets) {
           await new Promise<void>((resSearch) => {
             imap.search([["FROM", target.email]], async (searchErr, uids) => {
               if (searchErr) { resSearch(); return; }

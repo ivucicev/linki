@@ -367,10 +367,10 @@ export default function InboxPage() {
     setSyncingEmail(true);
     try {
       const r = await fetch("/api/inbox/sync-email", { method: "POST" });
-      if (!r.ok) throw new Error("Sync failed");
-      toast.success("Email sync started — results will appear shortly");
-      setTimeout(() => load(), 15000);
-      setTimeout(() => load(), 35000);
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error ?? "Sync failed");
+      toast.success(d.replies > 0 ? `Found ${d.replies} new repl${d.replies === 1 ? "y" : "ies"}` : "Sync complete — no new replies");
+      load();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Sync failed");
     } finally {
