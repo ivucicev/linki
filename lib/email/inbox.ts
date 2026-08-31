@@ -165,36 +165,40 @@ export async function syncEmailInbox(emailAccountId: string): Promise<{ replies:
     return { replies: 0, bounces: 0 };
   }
 
-  // Leads that were emailed via this account and haven't replied yet.
-  // Cast wide: any target with message_sent_at via this account, regardless of
-  // campaign track state — a reply can arrive before the next step fires.
+  // Leads that had an email step completed via this account and haven't replied yet.
+  // Primary: match by email_account_id on run_profiles
   const pendingTargets = db.prepare(`
     SELECT DISTINCT t.id, t.email
     FROM targets t
     JOIN run_profiles rp ON rp.target_id = t.id
+    JOIN run_profile_tracks rt ON rt.run_profile_id = rp.id
     WHERE t.email IS NOT NULL
       AND t.email_replied_at IS NULL
       AND t.email_status != 'invalid'
-      AND t.message_sent_at IS NOT NULL
+      AND rt.track = 'email'
+      AND rt.state IN ('completed', 'in_progress', 'failed', 'skipped')
       AND rp.email_account_id = ?
   `).all(emailAccountId) as { id: string; email: string }[];
 
-  // Fallback: if email_account_id not tracked on run_profiles, check ALL
-  // emailed targets against this mailbox (less precise but catches orphans).
+  // Fallback: email_account_id may not be set — check ALL targets that had any
+  // email track step attempted (not just pending)
   const fallbackTargets = pendingTargets.length === 0
     ? (db.prepare(`
         SELECT DISTINCT t.id, t.email
         FROM targets t
+        JOIN run_profiles rp ON rp.target_id = t.id
+        JOIN run_profile_tracks rt ON rt.run_profile_id = rp.id
         WHERE t.email IS NOT NULL
           AND t.email_replied_at IS NULL
           AND t.email_status != 'invalid'
-          AND t.message_sent_at IS NOT NULL
+          AND rt.track = 'email'
+          AND rt.state IN ('completed', 'in_progress', 'failed', 'skipped')
       `).all() as { id: string; email: string }[])
     : [];
 
   const allTargets = pendingTargets.length > 0 ? pendingTargets : fallbackTargets;
 
-  console.log(`[email-inbox] Account ${emailAccountId}: ${pendingTargets.length} matched targets, ${fallbackTargets.length} fallback targets, checking ${allTargets.length} total`);
+  console.log(`[email-inbox] Account ${emailAccountId}: ${pendingTargets.length} matched, ${fallbackTargets.length} fallback, checking ${allTargets.length} total`);
 
   if (allTargets.length === 0) {
     db.prepare("UPDATE email_accounts SET inbox_synced_at = datetime('now') WHERE id = ?").run(emailAccountId);
