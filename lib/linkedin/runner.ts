@@ -958,7 +958,19 @@ async function executeStep(
       const finalEmailBody = (sig && !isHtmlSig) ? `${emailBody}\n\n--\n${sig}` : emailBody;
       db.prepare("UPDATE run_profile_tracks SET last_step_at = datetime('now') WHERE id = ?").run(tr.id);
       log(db, runId, target.id, "info", `Sending email to ${name} <${freshTarget.email}>`);
-      await sendEmail({ ...emailAccount, password: decryptSecret(emailAccount.password)! }, freshTarget.email, emailSubject, finalEmailBody, isHtmlSig ? sig : null);
+      await sendEmail(
+        { ...emailAccount, password: decryptSecret(emailAccount.password)! },
+        freshTarget.email,
+        emailSubject,
+        finalEmailBody,
+        isHtmlSig ? sig : null,
+        {
+          targetId: target.id,
+          runId,
+          stepId: step.id,
+          baseUrl: process.env.NEXTAUTH_URL ?? "http://localhost:3000",
+        }
+      );
       db.prepare("UPDATE run_profile_tracks SET pending_message = NULL, pending_subject = NULL, approval_state = NULL WHERE id = ?").run(tr.id);
       trRecordContext(db, tr, { emailSubject, emailBody });
       trAdvance(db, tr, steps);

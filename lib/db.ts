@@ -484,6 +484,27 @@ function runMigrations(db: Database.Database) {
     "ALTER TABLE accounts ADD COLUMN withdraw_invites_at TEXT",
     // Per-contact withdrawal timestamp — 3-week cooldown before re-sending
     "ALTER TABLE targets ADD COLUMN connection_withdrawn_at TEXT",
+    // Email click tracking
+    `CREATE TABLE IF NOT EXISTS email_clicks (
+      id TEXT PRIMARY KEY,
+      target_id TEXT,
+      run_id TEXT,
+      step_id TEXT,
+      url TEXT,
+      clicked_at TEXT NOT NULL DEFAULT (datetime('now')),
+      ip TEXT,
+      user_agent TEXT
+    )`,
+    // Email open tracking
+    `CREATE TABLE IF NOT EXISTS email_opens (
+      id TEXT PRIMARY KEY,
+      target_id TEXT,
+      run_id TEXT,
+      step_id TEXT,
+      opened_at TEXT NOT NULL DEFAULT (datetime('now')),
+      ip TEXT,
+      user_agent TEXT
+    )`,
   ];
   for (const sql of migrations) {
     try { db.exec(sql); } catch { /* column already exists */ }
