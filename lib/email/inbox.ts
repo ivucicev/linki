@@ -208,6 +208,18 @@ export async function syncEmailInbox(emailAccountId: string): Promise<{ replies:
       (SELECT COUNT(*) FROM run_profile_tracks WHERE track = 'email' AND state = 'pending') as email_tracks_pending
   `).get() as Record<string, number>;
   console.log(`[email-inbox] DB debug:`, JSON.stringify(debugCounts));
+
+  // Deep debug: show the actual completed email track rows and their joins
+  const trackDebug = db.prepare(`
+    SELECT rt.id as track_id, rt.state, rt.run_profile_id,
+           rp.id as rp_id, rp.target_id, rp.email_account_id,
+           t.email, t.email_status, t.email_replied_at
+    FROM run_profile_tracks rt
+    LEFT JOIN run_profiles rp ON rp.id = rt.run_profile_id
+    LEFT JOIN targets t ON t.id = rp.target_id
+    WHERE rt.track = 'email' AND rt.state = 'completed'
+  `).all();
+  console.log(`[email-inbox] Completed email tracks:`, JSON.stringify(trackDebug));
   console.log(`[email-inbox] Account ${emailAccountId}: ${pendingTargets.length} matched, ${fallbackTargets.length} fallback, checking ${allTargets.length} total`);
 
   if (allTargets.length === 0) {
