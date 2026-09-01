@@ -174,7 +174,7 @@ export async function syncEmailInbox(emailAccountId: string): Promise<{ replies:
     JOIN run_profile_tracks rt ON rt.run_profile_id = rp.id
     WHERE t.email IS NOT NULL
       AND t.email_replied_at IS NULL
-      AND t.email_status != 'invalid'
+      AND (t.email_status IS NULL OR t.email_status != 'invalid')
       AND rt.track = 'email'
       AND rt.state IN ('completed', 'in_progress', 'failed', 'skipped')
       AND rp.email_account_id = ?
@@ -190,7 +190,7 @@ export async function syncEmailInbox(emailAccountId: string): Promise<{ replies:
         JOIN run_profile_tracks rt ON rt.run_profile_id = rp.id
         WHERE t.email IS NOT NULL
           AND t.email_replied_at IS NULL
-          AND t.email_status != 'invalid'
+          AND (t.email_status IS NULL OR t.email_status != 'invalid')
           AND rt.track = 'email'
           AND rt.state IN ('completed', 'in_progress', 'failed', 'skipped')
       `).all() as { id: string; email: string }[])
@@ -198,28 +198,6 @@ export async function syncEmailInbox(emailAccountId: string): Promise<{ replies:
 
   const allTargets = pendingTargets.length > 0 ? pendingTargets : fallbackTargets;
 
-  // Debug: show what's in the DB regardless of filters
-  const debugCounts = db.prepare(`
-    SELECT
-      (SELECT COUNT(*) FROM targets WHERE email IS NOT NULL) as total_with_email,
-      (SELECT COUNT(*) FROM targets WHERE email_replied_at IS NOT NULL) as already_replied,
-      (SELECT COUNT(*) FROM run_profile_tracks WHERE track = 'email') as email_tracks_total,
-      (SELECT COUNT(*) FROM run_profile_tracks WHERE track = 'email' AND state = 'completed') as email_tracks_completed,
-      (SELECT COUNT(*) FROM run_profile_tracks WHERE track = 'email' AND state = 'pending') as email_tracks_pending
-  `).get() as Record<string, number>;
-  console.log(`[email-inbox] DB debug:`, JSON.stringify(debugCounts));
-
-  // Deep debug: show the actual completed email track rows and their joins
-  const trackDebug = db.prepare(`
-    SELECT rt.id as track_id, rt.state, rt.run_profile_id,
-           rp.id as rp_id, rp.target_id, rp.email_account_id,
-           t.email, t.email_status, t.email_replied_at
-    FROM run_profile_tracks rt
-    LEFT JOIN run_profiles rp ON rp.id = rt.run_profile_id
-    LEFT JOIN targets t ON t.id = rp.target_id
-    WHERE rt.track = 'email' AND rt.state = 'completed'
-  `).all();
-  console.log(`[email-inbox] Completed email tracks:`, JSON.stringify(trackDebug));
   console.log(`[email-inbox] Account ${emailAccountId}: ${pendingTargets.length} matched, ${fallbackTargets.length} fallback, checking ${allTargets.length} total`);
 
   if (allTargets.length === 0) {
