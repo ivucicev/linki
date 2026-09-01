@@ -1,16 +1,6 @@
 import nodemailer from "nodemailer";
 import Imap from "imap";
 
-/** Replace all http(s) hrefs in HTML with click-tracking URLs. Skips mailto:, already-tracking links. */
-function wrapLinks(html: string, baseUrl: string, targetId: string, runId: string, stepId: string): string {
-  return html.replace(/href="(https?:\/\/[^"]+)"/gi, (match, url: string) => {
-    // Skip if the URL is already a tracking link
-    if (url.includes(`${baseUrl}/api/track/`)) return match;
-    const trackUrl = `${baseUrl}/api/track/click?t=${encodeURIComponent(targetId)}&r=${encodeURIComponent(runId)}&s=${encodeURIComponent(stepId)}&u=${encodeURIComponent(url)}`;
-    return `href="${trackUrl}"`;
-  });
-}
-
 /** Append a 1x1 open-tracking pixel before closing </div> or at end of HTML. */
 function addOpenPixel(html: string, baseUrl: string, targetId: string, runId: string, stepId: string): string {
   const pixel = `<img src="${baseUrl}/api/track/open?t=${encodeURIComponent(targetId)}&r=${encodeURIComponent(runId)}&s=${encodeURIComponent(stepId)}" width="1" height="1" style="display:none">`;
@@ -59,25 +49,21 @@ export async function sendEmail(
 
   const hasHtmlSig = htmlSignature && /<[a-z][\s\S]*>/i.test(htmlSignature);
 
-  let htmlBody: string | undefined;
-  if (hasHtmlSig) {
-    const bodyHtml = body
-      .split("\n")
-      .map((line) => line ? `<p style="margin:0 0 4px">${line.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</p>` : `<br>`)
-      .join("");
-    htmlBody = `<div style="font-family:sans-serif;font-size:14px;color:#111">${bodyHtml}<br>${htmlSignature}</div>`;
-  }
+  const bodyHtml = body
+    .split("\n")
+    .map((line) => line ? `<p style="margin:0 0 4px">${line.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</p>` : `<br>`)
+    .join("");
+  let htmlBody = `<div style="font-family:sans-serif;font-size:14px;color:#111">${bodyHtml}${hasHtmlSig ? `<br>${htmlSignature}` : ""}</div>`;
 
-  if (htmlBody && trackingParams) {
+  if (trackingParams) {
     const { targetId, runId, stepId, baseUrl } = trackingParams;
-    htmlBody = wrapLinks(htmlBody, baseUrl, targetId, runId, stepId);
     htmlBody = addOpenPixel(htmlBody, baseUrl, targetId, runId, stepId);
   }
 
   await transporter.sendMail({
     from, to, subject,
     text: body,
-    ...(htmlBody ? { html: htmlBody } : {}),
+    html: htmlBody,
     ...(account.reply_to ? { replyTo: account.reply_to } : {}),
   });
 }

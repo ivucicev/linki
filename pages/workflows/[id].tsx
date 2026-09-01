@@ -2378,7 +2378,7 @@ interface AnalyticsData {
   funnel: {
     total: number; profile_visits: number; connections_sent: number; connected: number;
     messages_sent: number; inmails_sent: number; li_replies: number;
-    emails_sent: number; email_replies: number; email_clicks: number; email_opens: number; completed: number;
+    emails_sent: number; email_replies: number; email_opens: number; completed: number;
   };
   activity: { day: string; visits: number; connections: number; messages: number; inmails: number; emails: number }[];
   aiDaily: { day: string; cost_usd: number; input_tokens: number; output_tokens: number }[];
@@ -2468,7 +2468,6 @@ function AnalyticsPanel({ workflowId, days: initialDays }: { workflowId: string;
           { label: "Acceptance rate", value: funnel.connections_sent > 0 ? Math.round((funnel.connected / funnel.connections_sent) * 100) : 0, color: "#32d583" },
           { label: "LI reply rate",   value: (funnel.messages_sent + funnel.inmails_sent) > 0 ? Math.round((funnel.li_replies / (funnel.messages_sent + funnel.inmails_sent)) * 100) : 0, color: "#c084fc" },
           { label: "Email open rate",  value: funnel.emails_sent > 0     ? Math.round((funnel.email_opens  / funnel.emails_sent) * 100)   : 0, color: "#f97316" },
-          { label: "Email click rate", value: funnel.emails_sent > 0     ? Math.round((funnel.email_clicks / funnel.emails_sent) * 100)   : 0, color: "#ef4444" },
           { label: "Email reply rate", value: funnel.emails_sent > 0     ? Math.round((funnel.email_replies / funnel.emails_sent) * 100)  : 0, color: "#fb923c" },
           { label: "Completion rate", value: funnel.total > 0           ? Math.round((funnel.completed / funnel.total) * 100)             : 0, color: "#5aa2ff" },
         ].map(card => (
@@ -2631,7 +2630,6 @@ function AnalyticsPanel({ workflowId, days: initialDays }: { workflowId: string;
               <FunnelBar label="LI Replies" value={funnel.li_replies} color="#c084fc" />
               <FunnelBar label="Emails sent" value={funnel.emails_sent} color="#fb923c" />
               <FunnelBar label="Email opens" value={funnel.email_opens ?? 0} color="#f97316" />
-              <FunnelBar label="Email clicks" value={funnel.email_clicks ?? 0} color="#ef4444" />
               <FunnelBar label="Email replies" value={funnel.email_replies} color="#32d583" />
               <div className="pt-2 border-t border-base-300/30 mt-2">
                 <FunnelBar label="Completed" value={funnel.completed} color="#5aa2ff" />

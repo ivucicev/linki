@@ -109,20 +109,17 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
               WHERE rt.run_profile_id = rp.id AND rt.state = 'completed'
             )) AS completed,
 
-        (SELECT COUNT(DISTINCT ec.target_id) FROM email_clicks ec
-          WHERE ec.run_id IN (${RUNS})) AS email_clicks,
-
         (SELECT COUNT(DISTINCT eo.target_id) FROM email_opens eo
           WHERE eo.run_id IN (${RUNS})) AS email_opens
     `).get(
       workflowId, workflowId, workflowId, workflowId, workflowId,
       workflowId, workflowId, workflowId, workflowId, workflowId,
-      workflowId, workflowId,
+      workflowId,
     ) as {
       total: number; profile_visits: number; connections_sent: number; connected: number;
       messages_sent: number; inmails_sent: number; li_replies: number;
       emails_sent: number; email_replies: number; completed: number;
-      email_clicks: number; email_opens: number;
+      email_opens: number;
     };
 
     // ── Daily activity ────────────────────────────────────────────────────────
@@ -133,16 +130,13 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
         COUNT(CASE WHEN l.message LIKE 'Connection request sent%' THEN 1 END) AS connections,
         COUNT(CASE WHEN l.message LIKE 'Message sent%' THEN 1 END) AS messages,
         COUNT(CASE WHEN l.message LIKE 'InMail sent%' THEN 1 END) AS inmails,
-        COUNT(CASE WHEN l.message LIKE 'Email sent%' THEN 1 END) AS emails,
-        (SELECT COUNT(*) FROM email_clicks ec
-          WHERE ec.run_id IN (${RUNS})
-            AND date(ec.clicked_at) = date(l.created_at)) AS email_click_events
+        COUNT(CASE WHEN l.message LIKE 'Email sent%' THEN 1 END) AS emails
       FROM logs l
       WHERE l.run_id IN (${RUNS})
         AND l.created_at >= datetime('now', '-${days} days')
       GROUP BY date(l.created_at)
       ORDER BY day ASC
-    `).all(workflowId, workflowId) as { day: string; visits: number; connections: number; messages: number; inmails: number; emails: number; email_click_events: number }[];
+    `).all(workflowId) as { day: string; visits: number; connections: number; messages: number; inmails: number; emails: number }[];
 
     const filled: typeof activity = [];
     for (let i = days - 1; i >= 0; i--) {
@@ -150,7 +144,7 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
       d.setDate(d.getDate() - i);
       const key = d.toISOString().slice(0, 10);
       const found = activity.find(r => r.day === key);
-      filled.push(found ?? { day: key, visits: 0, connections: 0, messages: 0, inmails: 0, emails: 0, email_click_events: 0 });
+      filled.push(found ?? { day: key, visits: 0, connections: 0, messages: 0, inmails: 0, emails: 0 });
     }
 
     // ── AI cost — daily time-series scoped to this workflow's runs ────────────
