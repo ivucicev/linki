@@ -29,11 +29,11 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
   );
   const insertStep = db.prepare(
     `INSERT INTO workflow_steps
-       (id, workflow_id, step_order, step_type, template_id, delay_seconds,
+       (id, workflow_id, step_order, track, step_type, template_id, delay_seconds,
         connect_note, message_body, email_subject, email_body,
         email_position, message_position,
         ai_enabled, ai_model, ai_prompt, ai_max_words, ai_language)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   );
   const insertLink = db.prepare(
     "INSERT OR IGNORE INTO workflow_step_templates (step_id, template_id) VALUES (?, ?)"
@@ -42,7 +42,7 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
   for (const s of steps) {
     const newStepId = randomUUID();
     insertStep.run(
-      newStepId, newId, s.step_order, s.step_type,
+      newStepId, newId, s.step_order, s.track ?? "linkedin", s.step_type,
       s.template_id ?? null, s.delay_seconds ?? 0,
       s.connect_note ?? null, s.message_body ?? null,
       s.email_subject ?? null, s.email_body ?? null,
