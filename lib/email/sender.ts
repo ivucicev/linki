@@ -1,16 +1,6 @@
 import nodemailer from "nodemailer";
 import Imap from "imap";
 
-/** Append a 1x1 open-tracking pixel before closing </div> or at end of HTML. */
-function addOpenPixel(html: string, baseUrl: string, targetId: string, runId: string, stepId: string): string {
-  const pixel = `<img src="${baseUrl}/api/track/open?t=${encodeURIComponent(targetId)}&r=${encodeURIComponent(runId)}&s=${encodeURIComponent(stepId)}" width="1" height="1" style="display:none">`;
-  const idx = html.lastIndexOf("</div>");
-  if (idx !== -1) {
-    return html.slice(0, idx) + pixel + html.slice(idx);
-  }
-  return html + pixel;
-}
-
 export interface EmailAccount {
   id: string;
   from_email: string;
@@ -29,7 +19,6 @@ export async function sendEmail(
   subject: string,
   body: string,
   htmlSignature?: string | null,
-  trackingParams?: { targetId: string; runId: string; stepId: string; baseUrl: string },
 ): Promise<void> {
   const transporter = nodemailer.createTransport({
     host: account.smtp_host,
@@ -53,12 +42,7 @@ export async function sendEmail(
     .split("\n")
     .map((line) => line ? `<p style="margin:0 0 4px">${line.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</p>` : `<br>`)
     .join("");
-  let htmlBody = `<div style="font-family:sans-serif;font-size:14px;color:#111">${bodyHtml}${hasHtmlSig ? `<br>${htmlSignature}` : ""}</div>`;
-
-  if (trackingParams) {
-    const { targetId, runId, stepId, baseUrl } = trackingParams;
-    htmlBody = addOpenPixel(htmlBody, baseUrl, targetId, runId, stepId);
-  }
+  const htmlBody = `<div style="font-family:sans-serif;font-size:14px;color:#111">${bodyHtml}${hasHtmlSig ? `<br>${htmlSignature}` : ""}</div>`;
 
   await transporter.sendMail({
     from, to, subject,

@@ -964,12 +964,6 @@ async function executeStep(
         emailSubject,
         finalEmailBody,
         isHtmlSig ? sig : null,
-        {
-          targetId: target.id,
-          runId,
-          stepId: step.id,
-          baseUrl: process.env.NEXTAUTH_URL ?? "http://localhost:3000",
-        }
       );
       db.prepare("UPDATE run_profile_tracks SET pending_message = NULL, pending_subject = NULL, approval_state = NULL WHERE id = ?").run(tr.id);
       trRecordContext(db, tr, { emailSubject, emailBody });

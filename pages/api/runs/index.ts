@@ -56,7 +56,7 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
     const runId = randomUUID();
     // For backwards compat, store first email account on the run row (may be null for no-email campaigns)
     db
-      .prepare("INSERT INTO runs (id, workflow_id, list_id, account_id, email_account_id) VALUES (?, ?, ?, ?, ?)")
+      .prepare("INSERT INTO runs (id, workflow_id, list_id, account_id, email_account_id, require_approval) VALUES (?, ?, ?, ?, ?, 1)")
       .run(runId, workflow_id, list_id, account_id, emailAccountPool[0] ?? null);
 
     // Create run_profiles — either for selected targets or all targets in the list
