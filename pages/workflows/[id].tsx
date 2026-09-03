@@ -118,6 +118,8 @@ interface Prospect {
   connection_withdrawn_at: string | null;
   connected_at: string | null;
   message_sent_at: string | null;
+  last_email_subject: string | null;
+  last_email_body: string | null;
 }
 
 interface List {
@@ -2679,6 +2681,7 @@ export default function WorkflowDetailPage({
   const [errorModal, setErrorModal] = useState<string | null>(null);
   const [expandedScreenshots, setExpandedScreenshots] = useState<string | null>(null);
   const [screenshotCache, setScreenshotCache] = useState<Record<string, Array<{ filename: string; url: string; ts: number; label: string }>>>({});
+  const [expandedEmail, setExpandedEmail] = useState<string | null>(null);
   const [screenshotModal, setScreenshotModal] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState("");
@@ -3497,6 +3500,15 @@ export default function WorkflowDetailPage({
                                 <RiLinkedinBoxLine size={13} />
                               </a>
                             )}
+                            {p.last_email_body && (
+                              <button
+                                title="View sent email"
+                                onClick={(e) => { e.stopPropagation(); setExpandedEmail(expandedEmail === p.target_id ? null : p.target_id); }}
+                                className={`inline-flex items-center p-1 rounded transition-colors ${expandedEmail === p.target_id ? "text-orange-400 bg-orange-400/10" : "text-base-content/20 hover:text-orange-400 hover:bg-orange-400/10"}`}
+                              >
+                                <RiMailLine size={13} />
+                              </button>
+                            )}
                             <button
                               title="View screenshots"
                               onClick={async (e) => {
@@ -3583,6 +3595,18 @@ export default function WorkflowDetailPage({
                                 ))}
                               </div>
                             )}
+                          </td>
+                        </tr>
+                      )}
+                      {expandedEmail === p.target_id && p.last_email_body && (
+                        <tr>
+                          <td colSpan={99} className="bg-base-200/60 px-4 py-3">
+                            <div className="max-w-2xl">
+                              {p.last_email_subject && (
+                                <p className="text-xs font-semibold text-base-content/70 mb-1">Subject: {p.last_email_subject}</p>
+                              )}
+                              <pre className="text-xs text-base-content/60 whitespace-pre-wrap font-sans leading-relaxed">{p.last_email_body}</pre>
+                            </div>
                           </td>
                         </tr>
                       )}
