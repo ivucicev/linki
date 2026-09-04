@@ -35,6 +35,7 @@ import {
   RiFlashlightLine,
   RiUserFollowLine,
   RiImageLine,
+  RiCheckLine,
 } from "react-icons/ri";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -2796,6 +2797,22 @@ export default function WorkflowDetailPage({
     }
   }
 
+  async function markCompleted(runId: string, targetId: string) {
+    const res = await fetch(`/api/runs/${runId}/complete`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ target_id: targetId }),
+    });
+    if (res.ok) {
+      toast.success("Marked as completed");
+      setProspects((prev) => prev.map((p) => p.target_id === targetId ? { ...p, state: "completed", error_message: null } : p));
+      refreshStats();
+    } else {
+      const err = await res.json();
+      toast.error(err.error ?? "Failed to mark as completed");
+    }
+  }
+
   async function retryAllErrored() {
     const res = await fetch(`/api/workflows/${initial.id}/retry-errored`, { method: "POST" });
     if (res.ok) {
@@ -3558,6 +3575,15 @@ export default function WorkflowDetailPage({
                                 className="inline-flex items-center p-1 rounded text-base-content/20 hover:text-primary hover:bg-primary/10 transition-colors"
                               >
                                 <RiRefreshLine size={13} />
+                              </button>
+                            )}
+                            {p.state !== "completed" && (
+                              <button
+                                title="Mark as completed"
+                                onClick={() => markCompleted(p.run_id, p.target_id)}
+                                className="inline-flex items-center p-1 rounded text-base-content/20 hover:text-success hover:bg-success/10 transition-colors"
+                              >
+                                <RiCheckLine size={13} />
                               </button>
                             )}
                             {p.state !== "completed" && (
