@@ -32,6 +32,8 @@ function inmailCreditsExhaustedToday(accountId: string): boolean {
 
 // Initial wait before first acceptance check (6h)
 const CONNECTION_RECHECK_HOURS = 6;
+// How many hours ahead to pre-generate approval messages
+const APPROVAL_PREGENERATE_HOURS = 24;
 // Max days to wait for acceptance before giving up
 const CONNECTION_MAX_WAIT_DAYS = 7;
 // Delay between profiles (seconds)
@@ -119,6 +121,25 @@ function nextScheduledSlot(account: ScheduleConfig): string {
     if (allowedDays.includes(isoWeekday)) return randomSlotInActiveWindow(account, candidate);
   }
   return new Date(Date.now() + 86_400_000).toISOString();
+}
+
+// If proposedAt lands outside working hours, advance to the next valid window slot.
+function snapToSchedule(account: ScheduleConfig, proposedAt: Date): string {
+  const tz = account.timezone || "UTC";
+  const allowedDays = (account.working_days || "1,2,3,4,5").split(",").map(Number);
+  const start = account.active_hours_start ?? 9;
+  const end = account.active_hours_end ?? 18;
+  const { hour, minute, isoWeekday } = getLocalParts(tz, proposedAt);
+  const frac = hour + minute / 60;
+  if (allowedDays.includes(isoWeekday) && frac >= start && frac < end) return proposedAt.toISOString();
+  const candidate = new Date(proposedAt);
+  if (frac >= end) candidate.setDate(candidate.getDate() + 1);
+  for (let i = 0; i < 14; i++) {
+    const { isoWeekday: wd } = getLocalParts(tz, candidate);
+    if (allowedDays.includes(wd)) return randomSlotInActiveWindow(account, candidate);
+    candidate.setDate(candidate.getDate() + 1);
+  }
+  return new Date(proposedAt.getTime() + 86_400_000).toISOString();
 }
 
 interface WorkflowStep {
@@ -221,7 +242,7 @@ function hoursSince(isoStr: string) { return (Date.now() - new Date(isoStr).getT
 // ─── TrackRun verb layer ─────────────────────────────────────────────────────
 // These are the only functions that write to run_profile_tracks rows.
 
-function trAdvance(db: ReturnType<typeof getDb>, tr: TrackRun, steps: WorkflowStep[]) {
+function trAdvance(db: ReturnType<typeof getDb>, tr: TrackRun, steps: WorkflowStep[], scheduleConfig?: ScheduleConfig) {
   const nextIndex = tr.current_step + 1;
   if (nextIndex >= steps.length) {
     db.prepare(
@@ -229,7 +250,11 @@ function trAdvance(db: ReturnType<typeof getDb>, tr: TrackRun, steps: WorkflowSt
     ).run(nextIndex, tr.id);
   } else {
     const nextStep = steps[nextIndex];
-    const nextAt = nextStep.delay_seconds > 0 ? new Date(Date.now() + nextStep.delay_seconds * 1000).toISOString() : null;
+    let nextAt: string | null = null;
+    if (nextStep.delay_seconds > 0) {
+      const raw = new Date(Date.now() + nextStep.delay_seconds * 1000);
+      nextAt = scheduleConfig ? snapToSchedule(scheduleConfig, raw) : raw.toISOString();
+    }
     db.prepare(
       "UPDATE run_profile_tracks SET current_step = ?, last_step_at = datetime('now'), next_step_at = ? WHERE id = ?"
     ).run(nextIndex, nextAt, tr.id);
@@ -570,10 +595,13 @@ async function executeStep(
 
     } else if (step.step_type === "message") {
       await ensureSalesNavEnriched(db, target, accountId);
-      if (!enforceSchedule(db, tr, runId, target.id, name, accountLimits)) return;
+      // Skip schedule + connection enforcement when pre-generating approval content —
+      // actual send (after approval) will enforce both.
+      const isGeneratingApproval = requireApproval && !tr.pending_message;
+      if (!isGeneratingApproval && !enforceSchedule(db, tr, runId, target.id, name, accountLimits)) return;
 
       const freshTarget = db.prepare("SELECT * FROM targets WHERE id = ?").get(target.id) as Target;
-      if (freshTarget.degree !== 1) {
+      if (!isGeneratingApproval && freshTarget.degree !== 1) {
         const requested = freshTarget.connection_requested_at;
         if (requested && hoursSince(requested) / 24 > CONNECTION_MAX_WAIT_DAYS) {
           log(db, runId, target.id, "warn", `${name} never accepted — skipping message step`);
@@ -699,7 +727,8 @@ async function executeStep(
         return;
       }
       await ensureSalesNavEnriched(db, target, accountId);
-      if (!enforceSchedule(db, tr, runId, target.id, name, accountLimits)) return;
+      const isGeneratingApproval = requireApproval && !tr.pending_message;
+      if (!isGeneratingApproval && !enforceSchedule(db, tr, runId, target.id, name, accountLimits)) return;
 
       const freshTarget = db.prepare("SELECT * FROM targets WHERE id = ?").get(target.id) as Target;
       if (!freshTarget.sales_nav_url) {
@@ -816,7 +845,8 @@ async function executeStep(
         return;
       }
 
-      if (!enforceSchedule(db, tr, runId, target.id, name, emailAccountLimits)) return;
+      const isGeneratingApproval = requireApproval && !tr.pending_message;
+      if (!isGeneratingApproval && !enforceSchedule(db, tr, runId, target.id, name, emailAccountLimits)) return;
 
       const freshTarget = db.prepare("SELECT * FROM targets WHERE id = ?").get(target.id) as Target;
       if (!freshTarget.email) {
@@ -844,7 +874,7 @@ async function executeStep(
       if (step.ai_enabled) {
         if (!premium?.ai) {
           log(db, runId, target.id, "warn", `AI writer is a premium feature — not available in this build. Skipping ${name}`);
-          trAdvance(db, tr, steps);
+          trAdvance(db, tr, steps, emailAccountLimits);
           return;
         }
         const integration = db.prepare("SELECT api_key FROM integrations WHERE key = 'openrouter'").get() as { api_key: string } | undefined;
@@ -852,13 +882,13 @@ async function executeStep(
         const resolvedEmailModel = step.ai_model || agentCfgForEmail.default_model;
         if (!integration?.api_key || !resolvedEmailModel) {
           log(db, runId, target.id, "warn", `AI enabled on email step but OpenRouter key or model missing — skipping ${name}`);
-          trAdvance(db, tr, steps);
+          trAdvance(db, tr, steps, emailAccountLimits);
           return;
         }
         const contactData = premium.ai.getContactWithCompany(target.id);
         if (!contactData) {
           log(db, runId, target.id, "warn", `Could not load contact data for AI email — skipping ${name}`);
-          trAdvance(db, tr, steps);
+          trAdvance(db, tr, steps, emailAccountLimits);
           return;
         }
         log(db, runId, target.id, "info", `Generating AI email for ${name} with ${resolvedEmailModel}`);
@@ -901,7 +931,7 @@ async function executeStep(
 
       if (!emailBody) {
         log(db, runId, target.id, "warn", `No email body for email step — skipping ${name}`);
-        trAdvance(db, tr, steps);
+        trAdvance(db, tr, steps, emailAccountLimits);
         return;
       }
 
@@ -967,7 +997,7 @@ async function executeStep(
       );
       db.prepare("UPDATE run_profile_tracks SET pending_message = NULL, pending_subject = NULL, approval_state = NULL WHERE id = ?").run(tr.id);
       trRecordContext(db, tr, { emailSubject, emailBody });
-      trAdvance(db, tr, steps);
+      trAdvance(db, tr, steps, emailAccountLimits);
       log(db, runId, target.id, "info", `Email sent to ${name}`);
     }
 
@@ -1253,6 +1283,33 @@ async function tick(db: ReturnType<typeof getDb>): Promise<void> {
     return workflowPromptCache.get(workflowId) ?? null;
   };
 
+  // Pre-generate approvals: pull future approvable tracks due within APPROVAL_PREGENERATE_HOURS
+  // into "due now" so users can batch-approve without waiting for scheduled time.
+  // Only applies to message/email/inmail steps — leaves connect/visit/delay on their schedule.
+  if (stillActive.length > 0) {
+    db.prepare(
+      `UPDATE run_profile_tracks SET next_step_at = datetime('now')
+       WHERE state = 'in_progress'
+       AND approval_state IS NULL
+       AND next_step_at > datetime('now')
+       AND next_step_at <= datetime('now', '+${APPROVAL_PREGENERATE_HOURS} hours')
+       AND run_profile_id IN (
+         SELECT rp.id FROM run_profiles rp
+         JOIN runs r ON r.id = rp.run_id
+         WHERE r.require_approval = 1 AND r.status = 'running'
+       )
+       AND EXISTS (
+         SELECT 1 FROM run_profiles rp2
+         JOIN runs r2 ON r2.id = rp2.run_id
+         JOIN workflow_steps ws ON ws.workflow_id = r2.workflow_id
+           AND ws.track = run_profile_tracks.track
+           AND ws.step_order = run_profile_tracks.current_step + 1
+         WHERE rp2.id = run_profile_tracks.run_profile_id
+         AND ws.step_type IN ('message', 'email', 'sales_inmail')
+       )`
+    ).run();
+  }
+
   // Collect ALL due track-runs across all active runs, oldest-due first
   const runIds = stillActive.map(r => r.run_id);
   const placeholders = runIds.map(() => "?").join(",");
@@ -1346,11 +1403,15 @@ async function tick(db: ReturnType<typeof getDb>): Promise<void> {
         if (emailLimits) {
           const effectiveLimit = effectiveEmailLimit(emailLimits);
           const emailsLeft = Math.max(0, effectiveLimit - (emailsSentToday.get(emailAccId) ?? 0));
+          const activeStart = String(emailLimits.active_hours_start ?? 9).padStart(2, "0");
+          const activeEnd = String(emailLimits.active_hours_end ?? 18).padStart(2, "0");
           const emailScheduledToday = (db.prepare(
             `SELECT COUNT(*) as c FROM run_profile_tracks rt
              JOIN run_profiles rp ON rp.id = rt.run_profile_id
              WHERE rp.email_account_id = ? AND rt.track = 'email' AND rt.state = 'in_progress'
-             AND date(datetime(rt.next_step_at)) = date('now')`
+             AND date(datetime(rt.next_step_at)) = date('now')
+             AND time(datetime(rt.next_step_at)) >= '${activeStart}:00:00'
+             AND time(datetime(rt.next_step_at)) < '${activeEnd}:00:00'`
           ).get(emailAccId) as { c: number }).c;
           const emailSlotsLeft = Math.max(0, emailsLeft - emailScheduledToday);
           if (emailSlotsLeft > 0) {
