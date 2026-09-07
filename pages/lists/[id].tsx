@@ -9,7 +9,7 @@ import {
   RiArrowLeftLine, RiDownloadLine, RiExternalLinkLine, RiDeleteBinLine,
   RiArrowLeftSLine, RiArrowRightSLine, RiRefreshLine, RiReplyLine,
   RiUserAddLine, RiUserFollowLine, RiUserLine, RiSparklingLine,
-  RiMessage2Line, RiMailCheckLine, RiMailLine, RiAtLine,
+  RiMessage2Line, RiMailCheckLine, RiMailLine, RiAtLine, RiMailSendLine, RiSendPlaneLine,
   RiArrowRightLine, RiSearchLine, RiPlayLine, RiHistoryLine,
 } from "react-icons/ri";
 import FilterBar, { ActiveFilter, applyFiltersClient } from "@/components/ui/FilterBar";
@@ -28,6 +28,8 @@ interface Target {
   connected_at: string | null;
   message_sent_at: string | null;
   last_replied_at: string | null;
+  inmail_sent_at: string | null;
+  email_sent_at: string | null;
   email: string | null;
   email_status: string | null;
   apollo_enriched_at: string | null;
@@ -660,6 +662,16 @@ export default function ListDetailPage({
                         {t.message_sent_at && (
                           <span title={`LinkedIn message sent ${t.message_sent_at.slice(0, 10)}`} className="text-info">
                             <RiMessage2Line size={14} />
+                          </span>
+                        )}
+                        {t.inmail_sent_at && (
+                          <span title={`InMail sent ${t.inmail_sent_at.slice(0, 10)}`} className="text-violet-400">
+                            <RiSendPlaneLine size={14} />
+                          </span>
+                        )}
+                        {t.email_sent_at && (
+                          <span title={`Email sent ${t.email_sent_at.slice(0, 10)}`} className="text-orange-400">
+                            <RiMailSendLine size={14} />
                           </span>
                         )}
                         {t.last_replied_at && (

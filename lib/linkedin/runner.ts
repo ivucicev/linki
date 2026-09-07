@@ -996,6 +996,7 @@ async function executeStep(
         isHtmlSig ? sig : null,
       );
       db.prepare("UPDATE run_profile_tracks SET pending_message = NULL, pending_subject = NULL, approval_state = NULL WHERE id = ?").run(tr.id);
+      db.prepare("UPDATE targets SET email_sent_at = COALESCE(email_sent_at, ?) WHERE id = ?").run(nowIso(), target.id);
       trRecordContext(db, tr, { emailSubject, emailBody });
       trAdvance(db, tr, steps, emailAccountLimits);
       log(db, runId, target.id, "info", `Email sent to ${name}`);

@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import {
   RiExternalLinkLine, RiArrowLeftSLine, RiArrowRightSLine,
   RiUserFollowLine, RiUserAddLine, RiUserLine,
-  RiMessage2Line, RiReplyLine, RiMailCheckLine, RiAtLine, RiMailLine,
+  RiMessage2Line, RiReplyLine, RiMailCheckLine, RiAtLine, RiMailLine, RiMailSendLine, RiSendPlaneLine,
   RiSearchLine, RiAddLine, RiListCheck2, RiDeleteBinLine,
 } from "react-icons/ri";
 import FilterBar, { ActiveFilter, filtersToParams } from "@/components/ui/FilterBar";
@@ -30,6 +30,8 @@ interface Contact {
   connected_at: string | null;
   message_sent_at: string | null;
   last_replied_at: string | null;
+  inmail_sent_at: string | null;
+  email_sent_at: string | null;
   apollo_enriched_at: string | null;
   seniority: string | null;
   created_at: string;
@@ -354,6 +356,12 @@ export default function ContactsPage({ lists, total: initialTotal }: { lists: Li
                           <ConnectionIcon t={c} />
                           {c.message_sent_at && (
                             <span title="LinkedIn message sent" className="text-info"><RiMessage2Line size={13} /></span>
+                          )}
+                          {c.inmail_sent_at && (
+                            <span title="InMail sent" className="text-violet-400"><RiSendPlaneLine size={13} /></span>
+                          )}
+                          {c.email_sent_at && (
+                            <span title="Email sent" className="text-orange-400"><RiMailSendLine size={13} /></span>
                           )}
                           {c.last_replied_at && (
                             <span title="Replied" className="text-success"><RiReplyLine size={13} /></span>

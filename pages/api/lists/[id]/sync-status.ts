@@ -1,5 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { getDb } from "@/lib/db";
+import { insertProfiles } from "@/lib/import-jobs";
 
 // POST /api/lists/[id]/sync-status  body: { account_id: number }
 // Re-fetches the Sales Nav list and updates degree for non-connected targets.
@@ -54,7 +55,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       }
     })();
 
-    return res.json({ updated, total: profiles.length });
+    const { imported } = insertProfiles(db, listId, profiles);
+
+    return res.json({ updated, total: profiles.length, imported });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     return res.status(500).json({ error: message });

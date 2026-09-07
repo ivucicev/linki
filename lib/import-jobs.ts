@@ -238,7 +238,7 @@ async function runBatch(importId: string): Promise<void> {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function insertProfiles(db: DB, listId: string, profiles: any[]): { imported: number; skipped: number } {
+export function insertProfiles(db: DB, listId: string, profiles: any[]): { imported: number; skipped: number } {
   const insertTarget = db.prepare(
     `INSERT INTO targets (
        id, linkedin_url, sales_nav_url, first_name, last_name, full_name,
