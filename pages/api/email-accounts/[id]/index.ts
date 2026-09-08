@@ -8,7 +8,7 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
 
   if (req.method === "GET") {
     const account = db
-      .prepare("SELECT id, name, from_email, from_name, reply_to, smtp_host, smtp_port, smtp_secure, imap_host, imap_port, username, imap_username, daily_email_limit, active_hours_start, active_hours_end, timezone, working_days, is_verified, signature, ramp_up_enabled, ramp_start_date, created_at FROM email_accounts WHERE id = ?")
+      .prepare("SELECT id, name, from_email, from_name, reply_to, smtp_host, smtp_port, smtp_secure, imap_host, imap_port, username, imap_username, daily_email_limit, new_contact_daily_limit, active_hours_start, active_hours_end, timezone, working_days, is_verified, signature, ramp_up_enabled, ramp_start_date, created_at FROM email_accounts WHERE id = ?")
       .get(id);
     if (!account) return res.status(404).json({ error: "not found" });
     return res.json(account);
@@ -21,7 +21,7 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
       imap_host, imap_port,
       username, password,
       imap_username, imap_password,
-      daily_email_limit,
+      daily_email_limit, new_contact_daily_limit,
       active_hours_start, active_hours_end,
       timezone, working_days,
       signature,
@@ -47,6 +47,7 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
         username = COALESCE(?, username), ${pwClause}
         imap_username = ?, ${imapPwClause}
         daily_email_limit = COALESCE(?, daily_email_limit),
+        new_contact_daily_limit = ?,
         active_hours_start = COALESCE(?, active_hours_start),
         active_hours_end = COALESCE(?, active_hours_end),
         timezone = COALESCE(?, timezone), working_days = COALESCE(?, working_days),
@@ -60,6 +61,7 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
       username ?? null, ...pwParams,
       imap_username ?? null, ...imapPwParams,
       daily_email_limit ?? null,
+      new_contact_daily_limit ?? null,
       active_hours_start ?? null, active_hours_end ?? null,
       timezone ?? null, working_days ?? null,
       signature ?? null, rampEnabled, ramp_start_date ?? null,

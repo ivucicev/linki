@@ -34,7 +34,7 @@ interface EmailAccount {
   id: string; name: string; from_email: string; from_name: string | null; reply_to: string | null;
   smtp_host: string; smtp_port: number; smtp_secure: number;
   imap_host: string | null; imap_port: number; username: string; imap_username: string | null;
-  daily_email_limit: number; active_hours_start: number; active_hours_end: number;
+  daily_email_limit: number; new_contact_daily_limit: number | null; active_hours_start: number; active_hours_end: number;
   timezone: string; working_days: string;
   is_verified: number; signature: string | null;
   ramp_up_enabled: number; ramp_start_date: string | null;
@@ -60,7 +60,7 @@ export const getServerSideProps: GetServerSideProps = async ({ query }) => {
     )
     .all();
   const emailAccounts = db
-    .prepare("SELECT id, name, from_email, from_name, reply_to, smtp_host, smtp_port, smtp_secure, imap_host, imap_port, username, daily_email_limit, active_hours_start, active_hours_end, timezone, working_days, is_verified, signature, ramp_up_enabled, ramp_start_date, created_at FROM email_accounts ORDER BY created_at DESC")
+    .prepare("SELECT id, name, from_email, from_name, reply_to, smtp_host, smtp_port, smtp_secure, imap_host, imap_port, username, daily_email_limit, new_contact_daily_limit, active_hours_start, active_hours_end, timezone, working_days, is_verified, signature, ramp_up_enabled, ramp_start_date, created_at FROM email_accounts ORDER BY created_at DESC")
     .all();
   const templates = db.prepare("SELECT * FROM templates ORDER BY created_at DESC").all();
   const validTabs: Tab[] = ["linkedin", "email", "templates", "integrations", "general"];
@@ -89,7 +89,7 @@ const BLANK_EMAIL_FORM = {
   smtp_host: "", smtp_port: 587, smtp_secure: 0,
   imap_host: "", imap_port: 993, username: "", password: "",
   imap_username: "", imap_password: "",
-  daily_email_limit: 50, active_hours_start: 9, active_hours_end: 18,
+  daily_email_limit: 50, new_contact_daily_limit: null as number | null, active_hours_start: 9, active_hours_end: 18,
   timezone: "Europe/Berlin", working_days: "1,2,3,4,5", signature: "",
   ramp_up_enabled: true,
   ramp_start_date: new Date().toISOString().slice(0, 10),
@@ -756,6 +756,7 @@ function EmailTab({ initialAccounts }: { initialAccounts: EmailAccount[] }) {
       imap_username: a.imap_username ?? "",
       imap_password: "",
       daily_email_limit: a.daily_email_limit,
+      new_contact_daily_limit: a.new_contact_daily_limit,
       active_hours_start: a.active_hours_start,
       active_hours_end: a.active_hours_end,
       timezone: a.timezone ?? "UTC",
@@ -787,6 +788,7 @@ function EmailTab({ initialAccounts }: { initialAccounts: EmailAccount[] }) {
       imap_username: a.imap_username ?? "",
       imap_password: "",
       daily_email_limit: a.daily_email_limit,
+      new_contact_daily_limit: a.new_contact_daily_limit,
       active_hours_start: a.active_hours_start,
       active_hours_end: a.active_hours_end,
       timezone: a.timezone ?? "UTC",
@@ -831,6 +833,7 @@ function EmailTab({ initialAccounts }: { initialAccounts: EmailAccount[] }) {
       username: form.username,
       imap_username: form.imap_username.trim() || null,
       daily_email_limit: form.daily_email_limit,
+      new_contact_daily_limit: form.new_contact_daily_limit ?? null,
       active_hours_start: form.active_hours_start,
       active_hours_end: form.active_hours_end,
       timezone: form.timezone,
@@ -1185,6 +1188,13 @@ function EmailTab({ initialAccounts }: { initialAccounts: EmailAccount[] }) {
                 <div>
                   <label className="label text-xs text-base-content/50 pb-1">Emails / day</label>
                   <input type="number" className="input input-bordered input-sm w-full bg-base-300/50" value={form.daily_email_limit} onChange={(e) => setForm({ ...form, daily_email_limit: Number(e.target.value) })} min={1} max={500} />
+                </div>
+                <div>
+                  <label className="label text-xs text-base-content/50 pb-1">New contacts / day <span className="text-base-content/30">(leave blank = no cap)</span></label>
+                  <input type="number" className="input input-bordered input-sm w-full bg-base-300/50" value={form.new_contact_daily_limit ?? ""} onChange={(e) => setForm({ ...form, new_contact_daily_limit: e.target.value === "" ? null : Number(e.target.value) })} min={1} max={500} placeholder="e.g. 30" />
+                  {form.new_contact_daily_limit != null && (
+                    <p className="text-xs text-base-content/40 mt-1">{form.new_contact_daily_limit} new · {Math.max(0, form.daily_email_limit - form.new_contact_daily_limit)} followup slots/day</p>
+                  )}
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>

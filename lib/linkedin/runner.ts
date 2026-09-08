@@ -57,6 +57,7 @@ interface AccountLimits extends ScheduleConfig {
 
 interface EmailAccountLimits extends ScheduleConfig {
   daily_email_limit: number;
+  new_contact_daily_limit: number | null;
   ramp_up_enabled: number | null;
   ramp_start_date: string | null;
 }
@@ -1218,7 +1219,7 @@ async function tick(db: ReturnType<typeof getDb>): Promise<void> {
     : [];
   const emailAccountLimitsMap = new Map<string, EmailAccountLimits>();
   for (const emailAccountId of emailAccountIds) {
-    const ea = db.prepare("SELECT daily_email_limit, active_hours_start, active_hours_end, timezone, working_days, ramp_up_enabled, ramp_start_date FROM email_accounts WHERE id = ?").get(emailAccountId) as EmailAccountLimits | undefined;
+    const ea = db.prepare("SELECT daily_email_limit, new_contact_daily_limit, active_hours_start, active_hours_end, timezone, working_days, ramp_up_enabled, ramp_start_date FROM email_accounts WHERE id = ?").get(emailAccountId) as EmailAccountLimits | undefined;
     if (ea) emailAccountLimitsMap.set(emailAccountId, ea);
   }
 
@@ -1414,7 +1415,10 @@ async function tick(db: ReturnType<typeof getDb>): Promise<void> {
              AND time(datetime(rt.next_step_at)) >= '${activeStart}:00:00'
              AND time(datetime(rt.next_step_at)) < '${activeEnd}:00:00'`
           ).get(emailAccId) as { c: number }).c;
-          const emailSlotsLeft = Math.max(0, emailsLeft - emailScheduledToday);
+          const newContactCap = emailLimits.new_contact_daily_limit != null
+            ? Math.max(0, emailLimits.new_contact_daily_limit - emailScheduledToday)
+            : emailsLeft - emailScheduledToday;
+          const emailSlotsLeft = Math.max(0, Math.min(emailsLeft - emailScheduledToday, newContactCap));
           if (emailSlotsLeft > 0) {
             const pendingEmail = db.prepare(
               `SELECT rt.id, rt.run_profile_id, rt.track FROM run_profile_tracks rt
@@ -1439,6 +1443,7 @@ async function tick(db: ReturnType<typeof getDb>): Promise<void> {
   const messagesPlanned = new Map<string, number>(Array.from(accountLimitsMap.keys()).map(id => [id, 0]));
   const inmailsPlanned = new Map<string, number>(Array.from(accountLimitsMap.keys()).map(id => [id, 0]));
   const emailsPlanned = new Map<string, number>(emailAccountIds.map(id => [id, 0]));
+  const newEmailsPlanned = new Map<string, number>(emailAccountIds.map(id => [id, 0]));
 
   for (const tr of dueTrackRuns) {
     const steps = getSteps(tr.workflow_id, tr.track);
@@ -1495,6 +1500,16 @@ async function tick(db: ReturnType<typeof getDb>): Promise<void> {
         if (sentToday + planned >= effectiveLimit) {
           toReschedule.push(tr);
         } else {
+          // New contact = no prior email sent on this track; followup = has last_email_body
+          const isNewContact = !tr.last_email_body;
+          if (isNewContact && emailLimits?.new_contact_daily_limit != null) {
+            const newPlanned = newEmailsPlanned.get(profileEmailAccountId) ?? 0;
+            if (newPlanned >= emailLimits.new_contact_daily_limit) {
+              toReschedule.push(tr);
+              continue;
+            }
+            newEmailsPlanned.set(profileEmailAccountId, newPlanned + 1);
+          }
           emailsPlanned.set(profileEmailAccountId, planned + 1);
           toExecute.push(tr);
         }

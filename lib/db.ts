@@ -423,6 +423,7 @@ function runMigrations(db: Database.Database) {
     "ALTER TABLE targets ADD COLUMN reply_kind TEXT",
     "ALTER TABLE targets ADD COLUMN inmail_sent_at TEXT",
     "ALTER TABLE targets ADD COLUMN email_sent_at TEXT",
+    "ALTER TABLE email_accounts ADD COLUMN new_contact_daily_limit INTEGER",
     "ALTER TABLE targets ADD COLUMN posts_json TEXT",        // recent posts from visit_profile
     "ALTER TABLE targets ADD COLUMN posts_scraped_at TEXT",
     // One-shot OOO reply context for the AI follow-up writer — set by the dispatcher,
