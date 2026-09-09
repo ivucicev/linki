@@ -1,7 +1,7 @@
 import Head from "next/head";
 import { useState, useEffect, useCallback } from "react";
 import { toast } from "sonner";
-import { RiCheckLine, RiCloseLine, RiMessage2Line, RiSendPlaneLine, RiMailLine } from "react-icons/ri";
+import { RiCheckLine, RiCloseLine, RiMessage2Line, RiSendPlaneLine, RiMailLine, RiRefreshLine } from "react-icons/ri";
 
 interface ApprovalItem {
   id: string;
@@ -41,6 +41,7 @@ export default function ApprovalsPage() {
   const [editedMessages, setEditedMessages] = useState<Record<string, string>>({});
   const [editedSubjects, setEditedSubjects] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState<Set<string>>(new Set());
+  const [regenerating, setRegenerating] = useState<Set<string>>(new Set());
 
   const fetchApprovals = useCallback(async () => {
     try {
@@ -87,6 +88,27 @@ export default function ApprovalsPage() {
       toast.error("Failed to approve");
     } finally {
       setSubmitting(prev => { const n = new Set(prev); n.delete(item.id); return n; });
+    }
+  }
+
+  async function handleRegenerate(item: ApprovalItem) {
+    if (regenerating.has(item.id)) return;
+    setRegenerating(prev => new Set(prev).add(item.id));
+    try {
+      const res = await fetch(`/api/approvals/${item.id}/regenerate`, { method: "POST" });
+      if (res.ok) {
+        const data = await res.json() as { message: string; subject: string | null };
+        setEditedMessages(prev => ({ ...prev, [item.id]: data.message }));
+        if (data.subject !== null) setEditedSubjects(prev => ({ ...prev, [item.id]: data.subject! }));
+        toast.success("Message regenerated");
+      } else {
+        const err = await res.json().catch(() => ({})) as { error?: string };
+        toast.error(err.error ?? "Failed to regenerate");
+      }
+    } catch {
+      toast.error("Failed to regenerate");
+    } finally {
+      setRegenerating(prev => { const n = new Set(prev); n.delete(item.id); return n; });
     }
   }
 
@@ -139,6 +161,7 @@ export default function ApprovalsPage() {
               const subject = editedSubjects[item.id] ?? item.pending_subject ?? "";
               const hasSubject = item.pending_subject !== null;
               const busy = submitting.has(item.id);
+              const isRegenerating = regenerating.has(item.id);
               const stepColor = STEP_TYPE_COLORS[item.step_type] ?? "bg-base-300 text-base-content/50";
 
               return (
@@ -182,10 +205,10 @@ export default function ApprovalsPage() {
                   <div className="flex flex-col gap-1">
                     <label className="text-xs text-base-content/40 font-medium uppercase tracking-wider">Message</label>
                     <textarea
-                      className="textarea bg-base-300/50 border border-base-300/60 rounded-lg text-sm w-full min-h-[120px] resize-y focus:outline-none focus:border-base-content/30"
+                      className="textarea bg-base-300/50 border border-base-300/60 rounded-lg text-sm w-full min-h-[400px] resize-y focus:outline-none focus:border-base-content/30"
                       value={message}
                       onChange={e => setEditedMessages(prev => ({ ...prev, [item.id]: e.target.value }))}
-                      disabled={busy}
+                      disabled={busy || isRegenerating}
                     />
                   </div>
 
@@ -194,15 +217,23 @@ export default function ApprovalsPage() {
                     <button
                       className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium bg-success/15 text-success border border-success/25 hover:bg-success/25 transition-colors disabled:opacity-50"
                       onClick={() => handleApprove(item)}
-                      disabled={busy || !message.trim()}
+                      disabled={busy || isRegenerating || !message.trim()}
                     >
                       {busy ? <span className="loading loading-spinner loading-xs" /> : <RiCheckLine size={14} />}
                       Approve
                     </button>
                     <button
                       className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium bg-base-300/60 text-base-content/50 border border-base-300/60 hover:bg-base-300 hover:text-base-content/70 transition-colors disabled:opacity-50"
+                      onClick={() => handleRegenerate(item)}
+                      disabled={busy || isRegenerating}
+                    >
+                      {isRegenerating ? <span className="loading loading-spinner loading-xs" /> : <RiRefreshLine size={14} />}
+                      Regenerate
+                    </button>
+                    <button
+                      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium bg-base-300/60 text-base-content/50 border border-base-300/60 hover:bg-error/10 hover:text-error hover:border-error/20 transition-colors disabled:opacity-50"
                       onClick={() => handleReject(item)}
-                      disabled={busy}
+                      disabled={busy || isRegenerating}
                     >
                       <RiCloseLine size={14} />
                       Reject
