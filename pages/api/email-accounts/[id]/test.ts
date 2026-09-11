@@ -52,14 +52,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     });
   }
 
-  const ok = !smtpError && !imapError;
+  const smtpOk = !smtpError;
 
-  if (ok) {
+  // SMTP passing = account is verified (can send). IMAP is optional — failure is a warning only.
+  if (smtpOk) {
     db.prepare("UPDATE email_accounts SET is_verified = 1 WHERE id = ?").run(id);
   }
 
-  return res.status(ok ? 200 : 400).json({
-    ok,
+  return res.status(smtpOk ? 200 : 400).json({
+    ok: smtpOk,
     smtp: smtpError ? { ok: false, error: smtpError } : { ok: true },
     imap: account.imap_host
       ? (imapError ? { ok: false, error: imapError } : { ok: true })

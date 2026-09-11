@@ -10,13 +10,19 @@ import {
   RiTimeLine, RiGlobalLine, RiLinkedinBoxLine, RiCheckboxCircleLine,
   RiEditLine, RiCheckLine, RiCloseLine, RiFlowChart,
   RiCheckboxBlankCircleLine, RiDeleteBinLine, RiCalendarLine,
-  RiAddLine, RiCloseCircleLine, RiPhoneLine, RiMessage2Line, RiSendPlaneLine,
+  RiAddLine, RiCloseCircleLine, RiPhoneLine, RiMessage2Line, RiSendPlaneLine, RiMailSendLine,
 } from "react-icons/ri";
 
 interface LiAccount {
   id: string;
   name: string;
   email: string;
+}
+
+interface EmailAccount {
+  id: string;
+  name: string;
+  from_email: string;
 }
 
 interface Company {
@@ -161,11 +167,12 @@ export const getServerSideProps: GetServerSideProps = async ({ params }) => {
   ).all(id) as ActivityLog[];
 
   const liAccounts = db.prepare("SELECT id, name, email FROM accounts WHERE is_authenticated = 1 ORDER BY name").all() as LiAccount[];
+  const emailAccounts = db.prepare("SELECT id, name, from_email FROM email_accounts WHERE is_verified = 1 ORDER BY name").all() as EmailAccount[];
 
   // rename DB 'company' text field to avoid TS collision with Company object
   const rawTarget = target as unknown as Record<string, unknown>;
   const { company: company_name, ...rest } = rawTarget;
-  return { props: { target: { ...rest, company_name, companyObj, lists }, campaignHistory, todos, activityLogs, allLists, liAccounts } };
+  return { props: { target: { ...rest, company_name, companyObj, lists }, campaignHistory, todos, activityLogs, allLists, liAccounts, emailAccounts } };
 };
 
 const LOG_TYPE_ICONS: Record<string, string> = {
@@ -562,7 +569,7 @@ function formatTenure(months: number | null) {
 }
 
 export default function ContactDetailPage({
-  target, campaignHistory, todos: initialTodos, activityLogs: initialLogs, allLists, liAccounts,
+  target, campaignHistory, todos: initialTodos, activityLogs: initialLogs, allLists, liAccounts, emailAccounts,
 }: {
   target: Target;
   campaignHistory: CampaignRun[];
@@ -570,6 +577,7 @@ export default function ContactDetailPage({
   activityLogs: ActivityLog[];
   allLists: ListRef[];
   liAccounts: LiAccount[];
+  emailAccounts: EmailAccount[];
 }) {
   const functions: string[] = target.apollo_functions ? JSON.parse(target.apollo_functions) : [];
   const positions: { title: string; companyName: string; startDate?: string; endDate?: string; current?: boolean; description?: string }[] =
@@ -747,6 +755,38 @@ export default function ContactDetailPage({
 
   const [checkingConnection, setCheckingConnection] = useState(false);
 
+  // Email modal state
+  const [showEmailModal, setShowEmailModal] = useState(false);
+  const [emailAccountId, setEmailAccountId] = useState(emailAccounts[0]?.id ?? "");
+  const [emailSubject, setEmailSubject] = useState("");
+  const [emailBody, setEmailBody] = useState("");
+  const [sendingEmail, setSendingEmail] = useState(false);
+
+  async function handleSendEmail() {
+    if (!emailAccountId || !emailSubject.trim() || !emailBody.trim()) return;
+    setSendingEmail(true);
+    try {
+      const res = await fetch(`/api/targets/${target.id}/send-email`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email_account_id: emailAccountId, subject: emailSubject.trim(), body: emailBody.trim() }),
+      });
+      if (res.ok) {
+        toast.success("Email sent");
+        setShowEmailModal(false);
+        setEmailSubject("");
+        setEmailBody("");
+      } else {
+        const err = await res.json().catch(() => ({})) as { error?: string };
+        toast.error(err.error ?? "Failed to send");
+      }
+    } catch {
+      toast.error("Failed to send");
+    } finally {
+      setSendingEmail(false);
+    }
+  }
+
   async function checkConnection() {
     if (checkingConnection || !target.linkedin_url) return;
     setCheckingConnection(true);
@@ -851,6 +891,73 @@ export default function ContactDetailPage({
           onClose={() => setSelectedLog(null)}
           onSave={(updated) => { setActivityLogs((prev) => prev.map((l) => l.id === updated.id ? updated : l)); setSelectedLog(null); toast.success("Saved"); }}
         />
+      )}
+      {showEmailModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setShowEmailModal(false)} />
+          <div className="relative z-10 w-full max-w-lg bg-base-100 border border-base-300/60 rounded-2xl shadow-2xl overflow-hidden">
+            <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-base-300/40">
+              <h2 className="text-sm font-semibold text-base-content">Send email to {target.full_name ?? "contact"}</h2>
+              <button onClick={() => setShowEmailModal(false)} className="w-7 h-7 flex items-center justify-center rounded-lg text-base-content/40 hover:text-base-content hover:bg-base-300/50 transition-colors">
+                <RiCloseLine size={16} />
+              </button>
+            </div>
+            <div className="px-6 py-5 flex flex-col gap-4">
+              {!target.email && (
+                <p className="text-sm text-error/70">Contact has no email address.</p>
+              )}
+              {emailAccounts.length === 0 ? (
+                <p className="text-sm text-error/70">No verified email accounts configured.</p>
+              ) : (
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs text-base-content/40 font-medium uppercase tracking-wider">From</label>
+                  <select
+                    value={emailAccountId}
+                    onChange={(e) => setEmailAccountId(e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg text-sm bg-base-200 border border-base-300/50 text-base-content focus:outline-none focus:border-primary/50"
+                  >
+                    {emailAccounts.map((a) => (
+                      <option key={a.id} value={a.id}>{a.name} ({a.from_email})</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              <div className="flex flex-col gap-1">
+                <label className="text-xs text-base-content/40 font-medium uppercase tracking-wider">Subject</label>
+                <input
+                  type="text"
+                  value={emailSubject}
+                  onChange={(e) => setEmailSubject(e.target.value)}
+                  placeholder="Subject line..."
+                  className="w-full px-3 py-2 rounded-lg text-sm bg-base-200 border border-base-300/50 text-base-content focus:outline-none focus:border-primary/50"
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-xs text-base-content/40 font-medium uppercase tracking-wider">Message</label>
+                <textarea
+                  value={emailBody}
+                  onChange={(e) => setEmailBody(e.target.value)}
+                  placeholder="Write your email..."
+                  rows={10}
+                  className="w-full px-3 py-3 rounded-lg text-sm bg-base-200 border border-base-300/50 text-base-content/80 leading-relaxed focus:outline-none focus:border-primary/50 resize-y"
+                />
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-base-300/40">
+              <button onClick={() => setShowEmailModal(false)} className="px-4 py-2 rounded-xl text-sm text-base-content/50 hover:text-base-content hover:bg-base-300/40 transition-colors">
+                Cancel
+              </button>
+              <button
+                onClick={handleSendEmail}
+                disabled={sendingEmail || !emailAccountId || !emailSubject.trim() || !emailBody.trim() || !target.email || emailAccounts.length === 0}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium bg-warning/90 text-warning-content hover:bg-warning disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              >
+                {sendingEmail ? <span className="loading loading-spinner loading-xs" /> : <RiMailSendLine size={14} />}
+                Send email
+              </button>
+            </div>
+          </div>
+        </div>
       )}
       {showSendModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -1023,6 +1130,14 @@ export default function ContactDetailPage({
               </div>
             </div>
             <div className="flex items-center gap-1.5 shrink-0">
+              {target.email && emailAccounts.length > 0 && (
+                <button
+                  onClick={() => { setEmailAccountId(emailAccounts[0]?.id ?? ""); setShowEmailModal(true); }}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-warning/10 text-warning border border-warning/20 hover:bg-warning/20 transition-colors"
+                >
+                  <RiMailSendLine size={14} /> Email
+                </button>
+              )}
               {target.linkedin_url && liAccounts.length > 0 && (
                 <button
                   onClick={() => openSendModal("message")}

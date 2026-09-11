@@ -883,11 +883,11 @@ function EmailTab({ initialAccounts }: { initialAccounts: EmailAccount[] }) {
     if (data.smtp?.ok === false) {
       toast.error(`SMTP failed: ${data.smtp.error}`);
     } else {
-      toast.success("SMTP verified");
+      toast.success(data.imap === null ? "SMTP verified (SMTP-only account)" : "SMTP verified");
     }
     if (data.imap !== null && data.imap !== undefined) {
       if (data.imap?.ok === false) {
-        toast.error(`IMAP failed: ${data.imap.error}`);
+        toast.warning(`IMAP warning: ${data.imap.error} — account still verified for sending`);
       } else {
         toast.success("IMAP verified");
       }
