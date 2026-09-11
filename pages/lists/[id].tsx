@@ -25,6 +25,7 @@ interface Target {
   location: string | null;
   degree: number | null;
   connection_requested_at: string | null;
+  connection_withdrawn_at: string | null;
   connected_at: string | null;
   message_sent_at: string | null;
   last_replied_at: string | null;
@@ -115,8 +116,15 @@ function ConnectionIcon({ t }: { t: Target }) {
       </span>
     );
   }
+  if (t.connection_withdrawn_at) {
+    return (
+      <span title={`Invite withdrawn ${t.connection_withdrawn_at.slice(0, 10)}`} className="text-base-content/25">
+        <RiUserLine size={15} />
+      </span>
+    );
+  }
   return (
-    <span title={t.degree ? `${t.degree === 2 ? "2nd" : "3rd"} degree` : "Not connected"} className="text-base-content/25">
+    <span title={t.degree ? `${t.degree === 2 ? "2nd" : "3rd"} degree` : "Not connected"} className="text-base-content/20">
       <RiUserLine size={15} />
     </span>
   );
@@ -173,6 +181,7 @@ export default function ListDetailPage({
   const [showApolloConfirm, setShowApolloConfirm] = useState(false);
   const [showMoveModal, setShowMoveModal] = useState(false);
   const [destListId, setDestListId] = useState("");
+  const [checkingConnections, setCheckingConnections] = useState(false);
 
   useEffect(() => {
     fetch("/api/integrations")
@@ -270,6 +279,35 @@ export default function ListDetailPage({
     setSelected(new Set());
     setAllFilteredSelected(false);
     setPage(0);
+  }
+
+  async function bulkCheckConnections() {
+    if (effectiveSelectedCount === 0 || checkingConnections) return;
+    const ids = effectiveSelectedIds.length > 0
+      ? effectiveSelectedIds
+      : filteredTargets.filter((t) => t.linkedin_url).map((t) => t.id);
+    if (ids.length === 0) { toast.error("No contacts with LinkedIn URL"); return; }
+    setCheckingConnections(true);
+    try {
+      const res = await fetch("/api/targets/bulk-check-connection", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids }),
+      });
+      if (res.ok) {
+        const data = await res.json() as { queued: number };
+        toast.success(`Checking ${data.queued} profiles in background — results update as they complete`);
+        setSelected(new Set());
+        setAllFilteredSelected(false);
+      } else {
+        const err = await res.json().catch(() => ({})) as { error?: string };
+        toast.error(err.error ?? "Failed to start check");
+      }
+    } catch {
+      toast.error("Failed to start check");
+    } finally {
+      setCheckingConnections(false);
+    }
   }
 
   async function moveToList() {
@@ -570,6 +608,14 @@ export default function ListDetailPage({
               <div className="flex flex-col gap-1">
                 <div className="flex items-center gap-2 px-3 py-1.5 bg-base-200 border border-base-300/50 rounded-lg">
                   <span className="text-xs text-base-content/50 flex-1">{effectiveSelectedCount} selected</span>
+                  <button
+                    className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-medium bg-base-300/60 text-base-content/60 border border-base-300/60 hover:bg-base-300 hover:text-base-content/80 transition-colors disabled:opacity-50"
+                    onClick={bulkCheckConnections}
+                    disabled={checkingConnections}
+                  >
+                    {checkingConnections ? <span className="loading loading-spinner loading-xs" /> : <RiUserFollowLine size={12} />}
+                    Check connections
+                  </button>
                   {allLists.length > 0 && (
                     <button
                       className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-medium bg-primary/10 text-primary border border-primary/20 hover:bg-primary/20 transition-colors"

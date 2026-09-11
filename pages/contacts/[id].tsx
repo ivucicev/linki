@@ -10,8 +10,14 @@ import {
   RiTimeLine, RiGlobalLine, RiLinkedinBoxLine, RiCheckboxCircleLine,
   RiEditLine, RiCheckLine, RiCloseLine, RiFlowChart,
   RiCheckboxBlankCircleLine, RiDeleteBinLine, RiCalendarLine,
-  RiAddLine, RiCloseCircleLine, RiPhoneLine,
+  RiAddLine, RiCloseCircleLine, RiPhoneLine, RiMessage2Line, RiSendPlaneLine,
 } from "react-icons/ri";
+
+interface LiAccount {
+  id: string;
+  name: string;
+  email: string;
+}
 
 interface Company {
   id: string;
@@ -86,6 +92,8 @@ interface Target {
   positions_json: string | null;
   connection_requested_at: string | null;
   connected_at: string | null;
+  connection_withdrawn_at: string | null;
+  connection_rejected_at: string | null;
   message_sent_at: string | null;
   last_replied_at: string | null;
   created_at: string;
@@ -152,10 +160,12 @@ export const getServerSideProps: GetServerSideProps = async ({ params }) => {
     "SELECT * FROM activity_logs WHERE target_id = ? ORDER BY logged_at DESC"
   ).all(id) as ActivityLog[];
 
+  const liAccounts = db.prepare("SELECT id, name, email FROM accounts WHERE is_authenticated = 1 ORDER BY name").all() as LiAccount[];
+
   // rename DB 'company' text field to avoid TS collision with Company object
   const rawTarget = target as unknown as Record<string, unknown>;
   const { company: company_name, ...rest } = rawTarget;
-  return { props: { target: { ...rest, company_name, companyObj, lists }, campaignHistory, todos, activityLogs, allLists } };
+  return { props: { target: { ...rest, company_name, companyObj, lists }, campaignHistory, todos, activityLogs, allLists, liAccounts } };
 };
 
 const LOG_TYPE_ICONS: Record<string, string> = {
@@ -552,13 +562,14 @@ function formatTenure(months: number | null) {
 }
 
 export default function ContactDetailPage({
-  target, campaignHistory, todos: initialTodos, activityLogs: initialLogs, allLists,
+  target, campaignHistory, todos: initialTodos, activityLogs: initialLogs, allLists, liAccounts,
 }: {
   target: Target;
   campaignHistory: CampaignRun[];
   todos: Todo[];
   activityLogs: ActivityLog[];
   allLists: ListRef[];
+  liAccounts: LiAccount[];
 }) {
   const functions: string[] = target.apollo_functions ? JSON.parse(target.apollo_functions) : [];
   const positions: { title: string; companyName: string; startDate?: string; endDate?: string; current?: boolean; description?: string }[] =
@@ -734,6 +745,73 @@ export default function ContactDetailPage({
     }
   }
 
+  const [checkingConnection, setCheckingConnection] = useState(false);
+
+  async function checkConnection() {
+    if (checkingConnection || !target.linkedin_url) return;
+    setCheckingConnection(true);
+    try {
+      const account = liAccounts[0];
+      const res = await fetch(`/api/targets/${target.id}/check-connection`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ account_id: account?.id }),
+      });
+      if (res.ok) {
+        toast.success("Check started — reload page in ~15s to see updated status");
+      } else {
+        const err = await res.json().catch(() => ({})) as { error?: string };
+        toast.error(err.error ?? "Failed to start check");
+      }
+    } catch {
+      toast.error("Failed to start check");
+    } finally {
+      setCheckingConnection(false);
+    }
+  }
+
+  // Send message modal state
+  const [showSendModal, setShowSendModal] = useState(false);
+  const [sendType, setSendType] = useState<"message" | "inmail">("message");
+  const [sendAccountId, setSendAccountId] = useState(liAccounts[0]?.id ?? "");
+  const [sendBody, setSendBody] = useState("");
+  const [sendSubject, setSendSubject] = useState("");
+  const [sending, setSending] = useState(false);
+
+  function openSendModal(type: "message" | "inmail") {
+    setSendType(type);
+    setSendAccountId(liAccounts[0]?.id ?? "");
+    setSendBody("");
+    setSendSubject("");
+    setShowSendModal(true);
+  }
+
+  async function handleSendMessage() {
+    if (!sendAccountId || !sendBody.trim()) return;
+    if (sendType === "inmail" && !sendSubject.trim()) return;
+    setSending(true);
+    try {
+      const payload: Record<string, string> = { account_id: sendAccountId, type: sendType, message: sendBody.trim() };
+      if (sendType === "inmail") payload.subject = sendSubject.trim();
+      const res = await fetch(`/api/targets/${target.id}/send-message`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (res.ok) {
+        toast.success("Message sent");
+        setShowSendModal(false);
+      } else {
+        const err = await res.json().catch(() => ({})) as { error?: string };
+        toast.error(err.error ?? "Failed to send");
+      }
+    } catch {
+      toast.error("Failed to send");
+    } finally {
+      setSending(false);
+    }
+  }
+
   const connectionStatus = degree === 1
     ? { label: "Connected", color: "bg-success/15 text-success" }
     : target.connection_requested_at
@@ -773,6 +851,94 @@ export default function ContactDetailPage({
           onClose={() => setSelectedLog(null)}
           onSave={(updated) => { setActivityLogs((prev) => prev.map((l) => l.id === updated.id ? updated : l)); setSelectedLog(null); toast.success("Saved"); }}
         />
+      )}
+      {showSendModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setShowSendModal(false)} />
+          <div className="relative z-10 w-full max-w-lg bg-base-100 border border-base-300/60 rounded-2xl shadow-2xl overflow-hidden">
+            <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-base-300/40">
+              <h2 className="text-sm font-semibold text-base-content">Send message to {target.full_name ?? "contact"}</h2>
+              <button onClick={() => setShowSendModal(false)} className="w-7 h-7 flex items-center justify-center rounded-lg text-base-content/40 hover:text-base-content hover:bg-base-300/50 transition-colors">
+                <RiCloseLine size={16} />
+              </button>
+            </div>
+            <div className="px-6 py-5 flex flex-col gap-4">
+              {/* Type selector */}
+              <div className="flex gap-1.5">
+                {target.linkedin_url && (
+                  <button
+                    onClick={() => setSendType("message")}
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${sendType === "message" ? "bg-success/15 text-success border border-success/25" : "bg-base-200 text-base-content/50 border border-base-300/50 hover:text-base-content/70"}`}
+                  >
+                    <RiMessage2Line size={13} /> LinkedIn Message
+                  </button>
+                )}
+                {target.sales_nav_url && (
+                  <button
+                    onClick={() => setSendType("inmail")}
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${sendType === "inmail" ? "bg-primary/15 text-primary border border-primary/25" : "bg-base-200 text-base-content/50 border border-base-300/50 hover:text-base-content/70"}`}
+                  >
+                    <RiSendPlaneLine size={13} /> Sales Nav InMail
+                  </button>
+                )}
+              </div>
+              {/* Account */}
+              {liAccounts.length === 0 ? (
+                <p className="text-sm text-error/70">No authenticated LinkedIn accounts.</p>
+              ) : (
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs text-base-content/40 font-medium uppercase tracking-wider">Account</label>
+                  <select
+                    value={sendAccountId}
+                    onChange={(e) => setSendAccountId(e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg text-sm bg-base-200 border border-base-300/50 text-base-content focus:outline-none focus:border-primary/50"
+                  >
+                    {liAccounts.map((a) => (
+                      <option key={a.id} value={a.id}>{a.name} ({a.email})</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              {/* Subject (InMail only) */}
+              {sendType === "inmail" && (
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs text-base-content/40 font-medium uppercase tracking-wider">Subject</label>
+                  <input
+                    type="text"
+                    value={sendSubject}
+                    onChange={(e) => setSendSubject(e.target.value)}
+                    placeholder="Subject line..."
+                    className="w-full px-3 py-2 rounded-lg text-sm bg-base-200 border border-base-300/50 text-base-content focus:outline-none focus:border-primary/50"
+                  />
+                </div>
+              )}
+              {/* Message body */}
+              <div className="flex flex-col gap-1">
+                <label className="text-xs text-base-content/40 font-medium uppercase tracking-wider">Message</label>
+                <textarea
+                  value={sendBody}
+                  onChange={(e) => setSendBody(e.target.value)}
+                  placeholder="Write your message..."
+                  rows={8}
+                  className="w-full px-3 py-3 rounded-lg text-sm bg-base-200 border border-base-300/50 text-base-content/80 leading-relaxed focus:outline-none focus:border-primary/50 resize-y"
+                />
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-base-300/40">
+              <button onClick={() => setShowSendModal(false)} className="px-4 py-2 rounded-xl text-sm text-base-content/50 hover:text-base-content hover:bg-base-300/40 transition-colors">
+                Cancel
+              </button>
+              <button
+                onClick={handleSendMessage}
+                disabled={sending || !sendAccountId || !sendBody.trim() || (sendType === "inmail" && !sendSubject.trim()) || liAccounts.length === 0}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium bg-primary/90 text-primary-content hover:bg-primary disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              >
+                {sending ? <span className="loading loading-spinner loading-xs" /> : <RiSendPlaneLine size={14} />}
+                Send
+              </button>
+            </div>
+          </div>
+        </div>
       )}
       {screenshotModal && (
         <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4" onClick={() => setScreenshotModal(null)}>
@@ -825,6 +991,17 @@ export default function ContactDetailPage({
                     <RiUserUnfollowLine size={11} /> Mark as not connected
                   </button>
                 )}
+                {target.linkedin_url && liAccounts.length > 0 && (
+                  <button
+                    onClick={checkConnection}
+                    disabled={checkingConnection}
+                    title="Visit LinkedIn profile and update connection status"
+                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium text-base-content/40 border border-base-300/50 hover:border-primary/40 hover:text-primary hover:bg-primary/5 transition-colors disabled:opacity-40"
+                  >
+                    {checkingConnection ? <span className="loading loading-spinner loading-xs" /> : <RiUserFollowLine size={11} />}
+                    Check connection
+                  </button>
+                )}
                 {target.email && (
                   target.email_status === "invalid" ? (
                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium bg-error/15 text-error">
@@ -846,6 +1023,22 @@ export default function ContactDetailPage({
               </div>
             </div>
             <div className="flex items-center gap-1.5 shrink-0">
+              {target.linkedin_url && liAccounts.length > 0 && (
+                <button
+                  onClick={() => openSendModal("message")}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-success/10 text-success border border-success/20 hover:bg-success/20 transition-colors"
+                >
+                  <RiMessage2Line size={14} /> Message
+                </button>
+              )}
+              {target.sales_nav_url && liAccounts.length > 0 && (
+                <button
+                  onClick={() => openSendModal("inmail")}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-primary/10 text-primary border border-primary/20 hover:bg-primary/20 transition-colors"
+                >
+                  <RiSendPlaneLine size={14} /> InMail
+                </button>
+              )}
               {target.linkedin_url && (
                 <a href={target.linkedin_url} target="_blank" rel="noopener noreferrer"
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-base-300 text-base-content/60 hover:text-base-content hover:bg-base-300/80 transition-colors">
@@ -1185,6 +1378,16 @@ export default function ContactDetailPage({
             <Field label="Added" value={formatDate(target.created_at)} />
             <Field label="Connection requested" value={formatDate(target.connection_requested_at)} />
             <Field label="Connected" value={formatDate(connectedAt)} />
+            {target.connection_withdrawn_at && (
+              <Field label="Invite withdrawn" value={
+                <span className="text-base-content/50">{formatDate(target.connection_withdrawn_at)}</span>
+              } />
+            )}
+            {target.connection_rejected_at && (
+              <Field label="Rejected / expired" value={
+                <span className="text-base-content/50">{formatDate(target.connection_rejected_at)}</span>
+              } />
+            )}
             <Field label="Message sent" value={formatDate(target.message_sent_at)} />
             <Field label="Last reply" value={formatDate(target.last_replied_at)} />
             <Field label="Apollo enriched" value={formatDate(target.apollo_enriched_at)} />

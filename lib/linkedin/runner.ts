@@ -954,6 +954,8 @@ async function executeStep(
         id: string; from_email: string; from_name: string | null; reply_to: string | null;
         smtp_host: string; smtp_port: number; smtp_secure: number;
         username: string; password: string; signature: string | null;
+        imap_host: string | null; imap_port: number; imap_username: string | null; imap_password: string | null;
+        save_to_sent: number | null;
       } | undefined;
 
       if (!emailAccount) {
@@ -990,7 +992,11 @@ async function executeStep(
       db.prepare("UPDATE run_profile_tracks SET last_step_at = datetime('now') WHERE id = ?").run(tr.id);
       log(db, runId, target.id, "info", `Sending email to ${name} <${freshTarget.email}>`);
       await sendEmail(
-        { ...emailAccount, password: decryptSecret(emailAccount.password)! },
+        {
+          ...emailAccount,
+          password: decryptSecret(emailAccount.password)!,
+          imap_password: emailAccount.imap_password ? decryptSecret(emailAccount.imap_password) : null,
+        },
         freshTarget.email,
         emailSubject,
         finalEmailBody,
