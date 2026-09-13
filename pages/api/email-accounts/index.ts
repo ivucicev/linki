@@ -13,9 +13,11 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
         SELECT ea.id, ea.name, ea.from_email, ea.from_name, ea.reply_to,
                ea.smtp_host, ea.smtp_port, ea.smtp_secure,
                ea.imap_host, ea.imap_port, ea.username, ea.imap_username,
-               ea.daily_email_limit, ea.active_hours_start, ea.active_hours_end,
+               ea.daily_email_limit, ea.new_contact_daily_limit,
+               ea.active_hours_start, ea.active_hours_end,
                ea.timezone, ea.working_days, ea.is_verified, ea.signature,
-               ea.ramp_up_enabled, ea.ramp_start_date, ea.created_at,
+               ea.ramp_up_enabled, ea.ramp_start_date,
+               ea.save_to_sent, ea.plain_text_only, ea.created_at,
                (SELECT COUNT(DISTINCT rp.run_id) FROM run_profiles rp
                 JOIN runs r ON rp.run_id = r.id
                 WHERE rp.email_account_id = ea.id
@@ -39,6 +41,8 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
       signature,
       ramp_up_enabled = 1,
       ramp_start_date,
+      save_to_sent = 0,
+      plain_text_only = 1,
     } = req.body;
 
     if (!name || !from_email || !smtp_host || !username || !password) {
@@ -53,8 +57,8 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
          imap_host, imap_port, username, password,
          imap_username, imap_password,
          daily_email_limit, active_hours_start, active_hours_end, timezone, working_days, signature,
-         ramp_up_enabled, ramp_start_date)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ramp_up_enabled, ramp_start_date, save_to_sent, plain_text_only)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id, name, from_email, from_name ?? null, reply_to ?? null,
       smtp_host, smtp_port, smtp_secure,
@@ -63,7 +67,8 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
       imap_username ?? null, imap_password ? encryptSecret(imap_password) : null,
       daily_email_limit, active_hours_start, active_hours_end, timezone, working_days,
       signature ?? null,
-      ramp_up_enabled ? 1 : 0, resolvedRampStart
+      ramp_up_enabled ? 1 : 0, resolvedRampStart,
+      save_to_sent ? 1 : 0, plain_text_only ? 1 : 0
     );
 
     return res.status(201).json({ id });
