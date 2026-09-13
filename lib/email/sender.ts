@@ -47,13 +47,17 @@ export async function sendEmail(
 
   let htmlBody: string;
   if (plainTextOnly) {
-    // Plain text only — no HTML part, no HTML signature. Best deliverability for cold outreach.
+    // Strip HTML tags from signature so it can be appended as plain text
+    const plainSig = htmlSignature
+      ? htmlSignature.replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&nbsp;/g, " ").trim()
+      : null;
+    const plainBody = plainSig ? `${body}\n\n--\n${plainSig}` : body;
     await transporter.sendMail({
       from, to, subject,
-      text: body,
+      text: plainBody,
       ...(account.reply_to ? { replyTo: account.reply_to } : {}),
     });
-    appendToSentFolder(account, to, subject, body, body).catch((err) =>
+    appendToSentFolder(account, to, subject, plainBody, plainBody).catch((err) =>
       console.warn("[sender] appendToSentFolder failed:", err instanceof Error ? err.message : err)
     );
     return;
