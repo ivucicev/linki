@@ -47,9 +47,18 @@ export async function sendEmail(
 
   let htmlBody: string;
   if (plainTextOnly) {
-    // Strip HTML tags from signature so it can be appended as plain text
+    // Convert block-level elements and <br> to newlines before stripping tags
     const plainSig = htmlSignature
-      ? htmlSignature.replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&nbsp;/g, " ").trim()
+      ? htmlSignature
+          .replace(/<br\s*\/?>/gi, "\n")
+          .replace(/<\/p>/gi, "\n")
+          .replace(/<\/div>/gi, "\n")
+          .replace(/<\/tr>/gi, "\n")
+          .replace(/<\/li>/gi, "\n")
+          .replace(/<[^>]+>/g, "")
+          .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&nbsp;/g, " ")
+          .replace(/\n{3,}/g, "\n\n")
+          .trim()
       : null;
     const plainBody = plainSig ? `${body}\n\n--\n${plainSig}` : body;
     await transporter.sendMail({
