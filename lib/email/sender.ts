@@ -17,6 +17,7 @@ export interface EmailAccount {
   imap_username?: string | null;
   imap_password?: string | null; // decrypted
   save_to_sent?: number | null; // 1 = enabled
+  plain_text_only?: number | null; // 1 = send text/plain only (better deliverability)
 }
 
 export async function sendEmail(
@@ -42,13 +43,28 @@ export async function sendEmail(
     ? `"${account.from_name}" <${account.from_email}>`
     : account.from_email;
 
-  const hasHtmlSig = htmlSignature && /<[a-z][\s\S]*>/i.test(htmlSignature);
+  const plainTextOnly = !!account.plain_text_only;
 
+  let htmlBody: string;
+  if (plainTextOnly) {
+    // Plain text only — no HTML part, no HTML signature. Best deliverability for cold outreach.
+    await transporter.sendMail({
+      from, to, subject,
+      text: body,
+      ...(account.reply_to ? { replyTo: account.reply_to } : {}),
+    });
+    appendToSentFolder(account, to, subject, body, body).catch((err) =>
+      console.warn("[sender] appendToSentFolder failed:", err instanceof Error ? err.message : err)
+    );
+    return;
+  }
+
+  const hasHtmlSig = htmlSignature && /<[a-z][\s\S]*>/i.test(htmlSignature);
   const bodyHtml = body
     .split("\n")
     .map((line) => line ? `<p style="margin:0 0 4px">${line.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</p>` : `<br>`)
     .join("");
-  const htmlBody = `<div style="font-family:sans-serif;font-size:14px;color:#111">${bodyHtml}${hasHtmlSig ? `<br>${htmlSignature}` : ""}</div>`;
+  htmlBody = `<div style="font-family:sans-serif;font-size:14px;color:#111">${bodyHtml}${hasHtmlSig ? `<br>${htmlSignature}` : ""}</div>`;
 
   await transporter.sendMail({
     from, to, subject,

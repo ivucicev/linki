@@ -8,7 +8,7 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
 
   if (req.method === "GET") {
     const account = db
-      .prepare("SELECT id, name, from_email, from_name, reply_to, smtp_host, smtp_port, smtp_secure, imap_host, imap_port, username, imap_username, daily_email_limit, new_contact_daily_limit, active_hours_start, active_hours_end, timezone, working_days, is_verified, signature, ramp_up_enabled, ramp_start_date, save_to_sent, created_at FROM email_accounts WHERE id = ?")
+      .prepare("SELECT id, name, from_email, from_name, reply_to, smtp_host, smtp_port, smtp_secure, imap_host, imap_port, username, imap_username, daily_email_limit, new_contact_daily_limit, active_hours_start, active_hours_end, timezone, working_days, is_verified, signature, ramp_up_enabled, ramp_start_date, save_to_sent, plain_text_only, created_at FROM email_accounts WHERE id = ?")
       .get(id);
     if (!account) return res.status(404).json({ error: "not found" });
     return res.json(account);
@@ -28,6 +28,7 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
       ramp_up_enabled,
       ramp_start_date,
       save_to_sent,
+      plain_text_only,
     } = req.body;
 
     const rampEnabled = ramp_up_enabled != null ? (ramp_up_enabled ? 1 : 0) : null;
@@ -54,7 +55,8 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
         timezone = COALESCE(?, timezone), working_days = COALESCE(?, working_days),
         signature = ?, ramp_up_enabled = COALESCE(?, ramp_up_enabled),
         ramp_start_date = COALESCE(?, ramp_start_date),
-        save_to_sent = COALESCE(?, save_to_sent)
+        save_to_sent = COALESCE(?, save_to_sent),
+      plain_text_only = COALESCE(?, plain_text_only)
       WHERE id = ?
     `).run(
       name ?? null, from_email ?? null, from_name ?? null, reply_to ?? null,
@@ -68,6 +70,7 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
       timezone ?? null, working_days ?? null,
       signature ?? null, rampEnabled, ramp_start_date ?? null,
       save_to_sent != null ? (save_to_sent ? 1 : 0) : null,
+      plain_text_only != null ? (plain_text_only ? 1 : 0) : null,
       id
     );
 

@@ -39,6 +39,7 @@ interface EmailAccount {
   is_verified: number; signature: string | null;
   ramp_up_enabled: number; ramp_start_date: string | null;
   save_to_sent: number | null;
+  plain_text_only: number | null;
   created_at: string;
   active_run_count: number;
 }
@@ -61,7 +62,7 @@ export const getServerSideProps: GetServerSideProps = async ({ query }) => {
     )
     .all();
   const emailAccounts = db
-    .prepare("SELECT id, name, from_email, from_name, reply_to, smtp_host, smtp_port, smtp_secure, imap_host, imap_port, username, daily_email_limit, new_contact_daily_limit, active_hours_start, active_hours_end, timezone, working_days, is_verified, signature, ramp_up_enabled, ramp_start_date, save_to_sent, created_at FROM email_accounts ORDER BY created_at DESC")
+    .prepare("SELECT id, name, from_email, from_name, reply_to, smtp_host, smtp_port, smtp_secure, imap_host, imap_port, username, daily_email_limit, new_contact_daily_limit, active_hours_start, active_hours_end, timezone, working_days, is_verified, signature, ramp_up_enabled, ramp_start_date, save_to_sent, plain_text_only, created_at FROM email_accounts ORDER BY created_at DESC")
     .all();
   const templates = db.prepare("SELECT * FROM templates ORDER BY created_at DESC").all();
   const validTabs: Tab[] = ["linkedin", "email", "templates", "integrations", "general"];
@@ -95,6 +96,7 @@ const BLANK_EMAIL_FORM = {
   ramp_up_enabled: true,
   ramp_start_date: new Date().toISOString().slice(0, 10),
   save_to_sent: false,
+  plain_text_only: true,
 };
 
 const TIMEZONES = [
@@ -767,6 +769,7 @@ function EmailTab({ initialAccounts }: { initialAccounts: EmailAccount[] }) {
       ramp_up_enabled: a.ramp_up_enabled === 1,
       ramp_start_date: new Date().toISOString().slice(0, 10),
       save_to_sent: a.save_to_sent === 1,
+      plain_text_only: a.plain_text_only === 1,
     });
     setShowModal(true);
   }
@@ -800,6 +803,7 @@ function EmailTab({ initialAccounts }: { initialAccounts: EmailAccount[] }) {
       ramp_up_enabled: a.ramp_up_enabled === 1,
       ramp_start_date: a.ramp_start_date ?? new Date().toISOString().slice(0, 10),
       save_to_sent: a.save_to_sent === 1,
+      plain_text_only: a.plain_text_only === 1,
     });
     setShowModal(true);
   }
@@ -846,6 +850,7 @@ function EmailTab({ initialAccounts }: { initialAccounts: EmailAccount[] }) {
       ramp_up_enabled: form.ramp_up_enabled ? 1 : 0,
       ramp_start_date: form.ramp_start_date || new Date().toISOString().slice(0, 10),
       save_to_sent: form.save_to_sent ? 1 : 0,
+      plain_text_only: form.plain_text_only ? 1 : 0,
     };
     // Only include password if provided (edit mode: leave blank to keep existing)
     if (form.password) body.password = form.password;
@@ -1283,6 +1288,22 @@ function EmailTab({ initialAccounts }: { initialAccounts: EmailAccount[] }) {
                     <RampDiagram startDate={form.ramp_start_date} target={form.daily_email_limit} />
                   </>
                 )}
+              </div>
+
+              <div className="border-t border-base-300/40 pt-3 flex flex-col gap-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-xs font-medium text-base-content/50 uppercase tracking-wide">Plain text only</p>
+                    <p className="text-xs text-base-content/35 mt-0.5">Send emails as text/plain — no HTML. Recommended for cold outreach to avoid spam filters.</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setForm(f => ({ ...f, plain_text_only: !f.plain_text_only }))}
+                    className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors shrink-0 ${form.plain_text_only ? "bg-primary" : "bg-base-300"}`}
+                  >
+                    <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${form.plain_text_only ? "translate-x-4" : "translate-x-0.5"}`} />
+                  </button>
+                </div>
               </div>
 
               <div className="border-t border-base-300/40 pt-3 flex flex-col gap-3">
