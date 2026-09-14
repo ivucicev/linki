@@ -1421,10 +1421,20 @@ async function tick(db: ReturnType<typeof getDb>): Promise<void> {
              AND time(datetime(rt.next_step_at)) >= '${activeStart}:00:00'
              AND time(datetime(rt.next_step_at)) < '${activeEnd}:00:00'`
           ).get(emailAccId) as { c: number }).c;
+          // Also count tomorrow — spreadEnrollBatch reschedules late-enrolled contacts to tomorrow,
+          // and without this check the system over-enrolls every tick until midnight, flooding
+          // the next day's approval queue beyond the daily limit.
+          const emailScheduledTomorrow = (db.prepare(
+            `SELECT COUNT(*) as c FROM run_profile_tracks rt
+             JOIN run_profiles rp ON rp.id = rt.run_profile_id
+             WHERE rp.email_account_id = ? AND rt.track = 'email' AND rt.state = 'in_progress'
+             AND date(datetime(rt.next_step_at)) = date('now', '+1 day')`
+          ).get(emailAccId) as { c: number }).c;
           const newContactCap = emailLimits.new_contact_daily_limit != null
             ? Math.max(0, emailLimits.new_contact_daily_limit - emailScheduledToday)
             : emailsLeft - emailScheduledToday;
-          const emailSlotsLeft = Math.max(0, Math.min(emailsLeft - emailScheduledToday, newContactCap));
+          const tomorrowCap = Math.max(0, effectiveLimit - emailScheduledTomorrow);
+          const emailSlotsLeft = Math.max(0, Math.min(emailsLeft - emailScheduledToday, newContactCap, tomorrowCap));
           if (emailSlotsLeft > 0) {
             const pendingEmail = db.prepare(
               `SELECT rt.id, rt.run_profile_id, rt.track FROM run_profile_tracks rt
