@@ -132,7 +132,7 @@ export default function ApprovalsPage() {
   }
 
   async function handleFlush() {
-    if (!confirm(`Reset all waiting approvals (except one day's worth per account) back to pending? They will re-enter the queue gradually.`)) return;
+    if (!confirm(`Reset all ${items.length} waiting approvals back to pending? They will re-enter the queue at the correct daily rate.`)) return;
     setFlushing(true);
     try {
       const res = await fetch("/api/approvals/flush", { method: "POST" });
@@ -158,7 +158,14 @@ export default function ApprovalsPage() {
       <div className="max-w-3xl mx-auto px-6 py-8">
         <div className="mb-6 flex items-start justify-between gap-4">
           <div>
-            <h1 className="text-xl font-semibold text-base-content">Message Approvals</h1>
+            <div className="flex items-center gap-2">
+              <h1 className="text-xl font-semibold text-base-content">Message Approvals</h1>
+              {items.length > 0 && (
+                <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-warning/15 text-warning border border-warning/20">
+                  {items.length}
+                </span>
+              )}
+            </div>
             <p className="text-sm text-base-content/50 mt-1">
               Review and approve messages before they are sent.
             </p>
@@ -187,93 +194,107 @@ export default function ApprovalsPage() {
             <p className="text-base-content/50 text-sm">No messages pending approval</p>
           </div>
         ) : (
-          <div className="flex flex-col gap-4">
-            {items.map(item => {
-              const message = editedMessages[item.id] ?? item.pending_message ?? "";
-              const subject = editedSubjects[item.id] ?? item.pending_subject ?? "";
-              const hasSubject = item.pending_subject !== null;
-              const busy = submitting.has(item.id);
-              const isRegenerating = regenerating.has(item.id);
-              const stepColor = STEP_TYPE_COLORS[item.step_type] ?? "bg-base-300 text-base-content/50";
+          <div className="flex flex-col gap-6">
+            {(() => {
+              const groups: { runId: string; workflowName: string; items: ApprovalItem[] }[] = [];
+              for (const item of items) {
+                const last = groups[groups.length - 1];
+                if (last && last.runId === item.run_id) {
+                  last.items.push(item);
+                } else {
+                  groups.push({ runId: item.run_id, workflowName: item.workflow_name, items: [item] });
+                }
+              }
+              return groups.map(group => (
+                <div key={group.runId} className="flex flex-col gap-4">
+                  <div className="flex items-center gap-3">
+                    <span className="text-xs font-semibold text-base-content/40 uppercase tracking-wider">{group.workflowName}</span>
+                    <span className="text-xs text-base-content/25">{group.items.length}</span>
+                    <div className="flex-1 h-px bg-base-300/50" />
+                  </div>
+                  {group.items.map(item => {
+                    const message = editedMessages[item.id] ?? item.pending_message ?? "";
+                    const subject = editedSubjects[item.id] ?? item.pending_subject ?? "";
+                    const hasSubject = item.pending_subject !== null;
+                    const busy = submitting.has(item.id);
+                    const isRegenerating = regenerating.has(item.id);
+                    const stepColor = STEP_TYPE_COLORS[item.step_type] ?? "bg-base-300 text-base-content/50";
+                    return (
+                      <div key={item.id} className="bg-base-200 border border-base-300/50 rounded-xl p-5 flex flex-col gap-4">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex flex-col gap-0.5">
+                            <div className="flex items-center gap-2">
+                              <span className="font-medium text-sm text-base-content">
+                                {item.full_name ?? "Unknown Contact"}
+                              </span>
+                              <span className={`inline-flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded-md border font-medium ${stepColor}`}>
+                                {STEP_TYPE_ICONS[item.step_type]}
+                                {STEP_TYPE_LABELS[item.step_type] ?? item.step_type}
+                              </span>
+                            </div>
+                            {(item.title || item.company) && (
+                              <p className="text-xs text-base-content/50">
+                                {[item.title, item.company].filter(Boolean).join(" at ")}
+                              </p>
+                            )}
+                          </div>
+                        </div>
 
-              return (
-                <div key={item.id} className="bg-base-200 border border-base-300/50 rounded-xl p-5 flex flex-col gap-4">
-                  {/* Header */}
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex flex-col gap-0.5">
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium text-sm text-base-content">
-                          {item.full_name ?? "Unknown Contact"}
-                        </span>
-                        <span className={`inline-flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded-md border font-medium ${stepColor}`}>
-                          {STEP_TYPE_ICONS[item.step_type]}
-                          {STEP_TYPE_LABELS[item.step_type] ?? item.step_type}
-                        </span>
+                        {hasSubject && (
+                          <div className="flex flex-col gap-1">
+                            <label className="text-xs text-base-content/40 font-medium uppercase tracking-wider">Subject</label>
+                            <input
+                              type="text"
+                              className="input input-sm bg-base-300/50 border border-base-300/60 rounded-lg text-sm w-full focus:outline-none focus:border-base-content/30"
+                              value={subject}
+                              onChange={e => setEditedSubjects(prev => ({ ...prev, [item.id]: e.target.value }))}
+                              disabled={busy}
+                            />
+                          </div>
+                        )}
+
+                        <div className="flex flex-col gap-1">
+                          <label className="text-xs text-base-content/40 font-medium uppercase tracking-wider">Message</label>
+                          <textarea
+                            className="textarea bg-base-300/50 border border-base-300/60 rounded-lg text-sm w-full min-h-[400px] resize-y focus:outline-none focus:border-base-content/30"
+                            value={message}
+                            onChange={e => setEditedMessages(prev => ({ ...prev, [item.id]: e.target.value }))}
+                            disabled={busy || isRegenerating}
+                          />
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <button
+                            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium bg-success/15 text-success border border-success/25 hover:bg-success/25 transition-colors disabled:opacity-50"
+                            onClick={() => handleApprove(item)}
+                            disabled={busy || isRegenerating || !message.trim()}
+                          >
+                            {busy ? <span className="loading loading-spinner loading-xs" /> : <RiCheckLine size={14} />}
+                            Approve
+                          </button>
+                          <button
+                            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium bg-base-300/60 text-base-content/50 border border-base-300/60 hover:bg-base-300 hover:text-base-content/70 transition-colors disabled:opacity-50"
+                            onClick={() => handleRegenerate(item)}
+                            disabled={busy || isRegenerating}
+                          >
+                            {isRegenerating ? <span className="loading loading-spinner loading-xs" /> : <RiRefreshLine size={14} />}
+                            Regenerate
+                          </button>
+                          <button
+                            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium bg-base-300/60 text-base-content/50 border border-base-300/60 hover:bg-error/10 hover:text-error hover:border-error/20 transition-colors disabled:opacity-50"
+                            onClick={() => handleReject(item)}
+                            disabled={busy || isRegenerating}
+                          >
+                            <RiCloseLine size={14} />
+                            Reject
+                          </button>
+                        </div>
                       </div>
-                      {(item.title || item.company) && (
-                        <p className="text-xs text-base-content/50">
-                          {[item.title, item.company].filter(Boolean).join(" at ")}
-                        </p>
-                      )}
-                      <p className="text-xs text-base-content/35 mt-0.5">{item.workflow_name}</p>
-                    </div>
-                  </div>
-
-                  {/* Subject field (email / inmail) */}
-                  {hasSubject && (
-                    <div className="flex flex-col gap-1">
-                      <label className="text-xs text-base-content/40 font-medium uppercase tracking-wider">Subject</label>
-                      <input
-                        type="text"
-                        className="input input-sm bg-base-300/50 border border-base-300/60 rounded-lg text-sm w-full focus:outline-none focus:border-base-content/30"
-                        value={subject}
-                        onChange={e => setEditedSubjects(prev => ({ ...prev, [item.id]: e.target.value }))}
-                        disabled={busy}
-                      />
-                    </div>
-                  )}
-
-                  {/* Message body */}
-                  <div className="flex flex-col gap-1">
-                    <label className="text-xs text-base-content/40 font-medium uppercase tracking-wider">Message</label>
-                    <textarea
-                      className="textarea bg-base-300/50 border border-base-300/60 rounded-lg text-sm w-full min-h-[400px] resize-y focus:outline-none focus:border-base-content/30"
-                      value={message}
-                      onChange={e => setEditedMessages(prev => ({ ...prev, [item.id]: e.target.value }))}
-                      disabled={busy || isRegenerating}
-                    />
-                  </div>
-
-                  {/* Actions */}
-                  <div className="flex items-center gap-2">
-                    <button
-                      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium bg-success/15 text-success border border-success/25 hover:bg-success/25 transition-colors disabled:opacity-50"
-                      onClick={() => handleApprove(item)}
-                      disabled={busy || isRegenerating || !message.trim()}
-                    >
-                      {busy ? <span className="loading loading-spinner loading-xs" /> : <RiCheckLine size={14} />}
-                      Approve
-                    </button>
-                    <button
-                      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium bg-base-300/60 text-base-content/50 border border-base-300/60 hover:bg-base-300 hover:text-base-content/70 transition-colors disabled:opacity-50"
-                      onClick={() => handleRegenerate(item)}
-                      disabled={busy || isRegenerating}
-                    >
-                      {isRegenerating ? <span className="loading loading-spinner loading-xs" /> : <RiRefreshLine size={14} />}
-                      Regenerate
-                    </button>
-                    <button
-                      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium bg-base-300/60 text-base-content/50 border border-base-300/60 hover:bg-error/10 hover:text-error hover:border-error/20 transition-colors disabled:opacity-50"
-                      onClick={() => handleReject(item)}
-                      disabled={busy || isRegenerating}
-                    >
-                      <RiCloseLine size={14} />
-                      Reject
-                    </button>
-                  </div>
+                    );
+                  })}
                 </div>
-              );
-            })}
+              ));
+            })()}
           </div>
         )}
       </div>
