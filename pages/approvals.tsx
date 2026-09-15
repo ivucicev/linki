@@ -15,6 +15,14 @@ interface ApprovalItem {
   run_id: string;
   workflow_name: string;
   step_type: string;
+  step_number: number;
+}
+
+function ordinal(n: number): string {
+  if (n === 1) return "1st";
+  if (n === 2) return "2nd";
+  if (n === 3) return "3rd";
+  return `${n}th`;
 }
 
 const STEP_TYPE_ICONS: Record<string, React.ReactNode> = {
@@ -229,7 +237,7 @@ export default function ApprovalsPage() {
                               </span>
                               <span className={`inline-flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded-md border font-medium ${stepColor}`}>
                                 {STEP_TYPE_ICONS[item.step_type]}
-                                {STEP_TYPE_LABELS[item.step_type] ?? item.step_type}
+                                {ordinal(item.step_number)} {STEP_TYPE_LABELS[item.step_type] ?? item.step_type}
                               </span>
                             </div>
                             {(item.title || item.company) && (
