@@ -1293,29 +1293,80 @@ async function tick(db: ReturnType<typeof getDb>): Promise<void> {
 
   // Pre-generate approvals: pull future approvable tracks due within APPROVAL_PREGENERATE_HOURS
   // into "due now" so users can batch-approve without waiting for scheduled time.
-  // Only applies to message/email/inmail steps — leaves connect/visit/delay on their schedule.
+  // Capped per account at its daily limit so we never flood the approval queue.
   if (stillActive.length > 0) {
-    db.prepare(
-      `UPDATE run_profile_tracks SET next_step_at = datetime('now')
-       WHERE state = 'in_progress'
-       AND approval_state IS NULL
-       AND next_step_at > datetime('now')
-       AND next_step_at <= datetime('now', '+${APPROVAL_PREGENERATE_HOURS} hours')
-       AND run_profile_id IN (
-         SELECT rp.id FROM run_profiles rp
-         JOIN runs r ON r.id = rp.run_id
-         WHERE r.require_approval = 1 AND r.status = 'running'
-       )
-       AND EXISTS (
-         SELECT 1 FROM run_profiles rp2
-         JOIN runs r2 ON r2.id = rp2.run_id
-         JOIN workflow_steps ws ON ws.workflow_id = r2.workflow_id
-           AND ws.track = run_profile_tracks.track
-           AND ws.step_order = run_profile_tracks.current_step + 1
-         WHERE rp2.id = run_profile_tracks.run_profile_id
-         AND ws.step_type IN ('message', 'email', 'sales_inmail')
-       )`
-    ).run();
+    // Email tracks — cap per email account
+    for (const emailAccId of emailAccountIds) {
+      const emailLimits = emailAccountLimitsMap.get(emailAccId);
+      if (!emailLimits) continue;
+      const limit = effectiveEmailLimit(emailLimits);
+      const waiting = (db.prepare(
+        `SELECT COUNT(*) as c FROM run_profile_tracks rt
+         JOIN run_profiles rp ON rp.id = rt.run_profile_id
+         WHERE rp.email_account_id = ? AND rt.track = 'email' AND rt.approval_state = 'waiting'`
+      ).get(emailAccId) as { c: number }).c;
+      const canPregen = Math.max(0, limit - waiting);
+      if (canPregen > 0) {
+        db.prepare(
+          `UPDATE run_profile_tracks SET next_step_at = datetime('now')
+           WHERE id IN (
+             SELECT rt.id FROM run_profile_tracks rt
+             JOIN run_profiles rp ON rp.id = rt.run_profile_id
+             JOIN runs r ON r.id = rp.run_id
+             JOIN workflow_steps ws ON ws.workflow_id = r.workflow_id
+               AND ws.track = rt.track AND ws.step_order = rt.current_step + 1
+             WHERE rp.email_account_id = ?
+               AND rt.state = 'in_progress' AND rt.approval_state IS NULL
+               AND rt.next_step_at > datetime('now')
+               AND rt.next_step_at <= datetime('now', '+${APPROVAL_PREGENERATE_HOURS} hours')
+               AND r.require_approval = 1 AND r.status = 'running'
+               AND ws.step_type = 'email'
+             ORDER BY rt.next_step_at
+             LIMIT ?
+           )`
+        ).run(emailAccId, canPregen);
+      }
+    }
+
+    // LinkedIn tracks — cap messages and inmails per account
+    for (const [accountId, limits] of accountLimitsMap) {
+      for (const { stepType, cap } of [
+        { stepType: "message", cap: limits.daily_message_limit ?? 50 },
+        { stepType: "sales_inmail", cap: limits.daily_inmail_limit ?? 15 },
+      ]) {
+        const waiting = (db.prepare(
+          `SELECT COUNT(*) as c FROM run_profile_tracks rt
+           JOIN run_profiles rp ON rp.id = rt.run_profile_id
+           JOIN runs r ON r.id = rp.run_id
+           JOIN workflow_steps ws ON ws.workflow_id = r.workflow_id
+             AND ws.track = rt.track AND ws.step_order = rt.current_step + 1
+           WHERE r.account_id = ? AND rt.track = 'linkedin'
+           AND rt.approval_state = 'waiting' AND ws.step_type = ?`
+        ).get(accountId, stepType) as { c: number }).c;
+        const canPregen = Math.max(0, cap - waiting);
+        if (canPregen > 0) {
+          db.prepare(
+            `UPDATE run_profile_tracks SET next_step_at = datetime('now')
+             WHERE id IN (
+               SELECT rt.id FROM run_profile_tracks rt
+               JOIN run_profiles rp ON rp.id = rt.run_profile_id
+               JOIN runs r ON r.id = rp.run_id
+               JOIN workflow_steps ws ON ws.workflow_id = r.workflow_id
+                 AND ws.track = rt.track AND ws.step_order = rt.current_step + 1
+               WHERE r.account_id = ?
+                 AND rt.track = 'linkedin' AND rt.state = 'in_progress'
+                 AND rt.approval_state IS NULL
+                 AND rt.next_step_at > datetime('now')
+                 AND rt.next_step_at <= datetime('now', '+${APPROVAL_PREGENERATE_HOURS} hours')
+                 AND r.require_approval = 1 AND r.status = 'running'
+                 AND ws.step_type = ?
+               ORDER BY rt.next_step_at
+               LIMIT ?
+             )`
+          ).run(accountId, stepType, canPregen);
+        }
+      }
+    }
   }
 
   // Collect ALL due track-runs across all active runs, oldest-due first
@@ -1421,20 +1472,25 @@ async function tick(db: ReturnType<typeof getDb>): Promise<void> {
              AND time(datetime(rt.next_step_at)) >= '${activeStart}:00:00'
              AND time(datetime(rt.next_step_at)) < '${activeEnd}:00:00'`
           ).get(emailAccId) as { c: number }).c;
-          // Also count tomorrow — spreadEnrollBatch reschedules late-enrolled contacts to tomorrow,
-          // and without this check the system over-enrolls every tick until midnight, flooding
-          // the next day's approval queue beyond the daily limit.
-          const emailScheduledTomorrow = (db.prepare(
+          // Count all in-flight items not yet sent: waiting for approval, approved but not sent,
+          // or scheduled for a future slot. Pre-generation (APPROVAL_PREGENERATE_HOURS) moves
+          // tomorrow's items to next_step_at=now and sets approval_state='waiting', making a
+          // simple "scheduled tomorrow" count always return 0. Counting all unsent in-flight
+          // items prevents enrollment from refilling tomorrow's quota every tick.
+          const emailInFlight = (db.prepare(
             `SELECT COUNT(*) as c FROM run_profile_tracks rt
              JOIN run_profiles rp ON rp.id = rt.run_profile_id
              WHERE rp.email_account_id = ? AND rt.track = 'email' AND rt.state = 'in_progress'
-             AND date(datetime(rt.next_step_at)) = date('now', '+1 day')`
+             AND (
+               rt.approval_state IN ('waiting', 'approved')
+               OR (rt.approval_state IS NULL AND datetime(rt.next_step_at) > datetime('now'))
+             )`
           ).get(emailAccId) as { c: number }).c;
           const newContactCap = emailLimits.new_contact_daily_limit != null
             ? Math.max(0, emailLimits.new_contact_daily_limit - emailScheduledToday)
             : emailsLeft - emailScheduledToday;
-          const tomorrowCap = Math.max(0, effectiveLimit - emailScheduledTomorrow);
-          const emailSlotsLeft = Math.max(0, Math.min(emailsLeft - emailScheduledToday, newContactCap, tomorrowCap));
+          const inFlightCap = Math.max(0, effectiveLimit - emailInFlight);
+          const emailSlotsLeft = Math.max(0, Math.min(emailsLeft - emailScheduledToday, newContactCap, inFlightCap));
           if (emailSlotsLeft > 0) {
             const pendingEmail = db.prepare(
               `SELECT rt.id, rt.run_profile_id, rt.track FROM run_profile_tracks rt

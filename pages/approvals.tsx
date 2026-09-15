@@ -42,6 +42,7 @@ export default function ApprovalsPage() {
   const [editedSubjects, setEditedSubjects] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState<Set<string>>(new Set());
   const [regenerating, setRegenerating] = useState<Set<string>>(new Set());
+  const [flushing, setFlushing] = useState(false);
 
   const fetchApprovals = useCallback(async () => {
     try {
@@ -130,17 +131,48 @@ export default function ApprovalsPage() {
     }
   }
 
+  async function handleFlush() {
+    if (!confirm(`Reset all waiting approvals (except one day's worth per account) back to pending? They will re-enter the queue gradually.`)) return;
+    setFlushing(true);
+    try {
+      const res = await fetch("/api/approvals/flush", { method: "POST" });
+      if (res.ok) {
+        const data = await res.json() as { reset: number };
+        toast.success(`Flushed ${data.reset} item${data.reset === 1 ? "" : "s"} back to queue`);
+        await fetchApprovals();
+      } else {
+        toast.error("Flush failed");
+      }
+    } catch {
+      toast.error("Flush failed");
+    } finally {
+      setFlushing(false);
+    }
+  }
+
   return (
     <>
       <Head>
         <title>Approvals — Linki</title>
       </Head>
       <div className="max-w-3xl mx-auto px-6 py-8">
-        <div className="mb-6">
-          <h1 className="text-xl font-semibold text-base-content">Message Approvals</h1>
-          <p className="text-sm text-base-content/50 mt-1">
-            Review and approve messages before they are sent.
-          </p>
+        <div className="mb-6 flex items-start justify-between gap-4">
+          <div>
+            <h1 className="text-xl font-semibold text-base-content">Message Approvals</h1>
+            <p className="text-sm text-base-content/50 mt-1">
+              Review and approve messages before they are sent.
+            </p>
+          </div>
+          {items.length > 0 && (
+            <button
+              onClick={handleFlush}
+              disabled={flushing}
+              className="btn btn-sm btn-ghost text-base-content/50 border border-base-content/10 shrink-0"
+            >
+              {flushing ? <span className="loading loading-spinner loading-xs" /> : null}
+              Flush Queue
+            </button>
+          )}
         </div>
 
         {loading ? (
