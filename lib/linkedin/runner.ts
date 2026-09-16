@@ -1419,7 +1419,7 @@ async function tick(db: ReturnType<typeof getDb>): Promise<void> {
       rp.email_account_id = ? AND rt.track = 'email' AND rt.state = 'in_progress'
       AND (
         rt.approval_state IN ('waiting', 'approved')
-        OR (rt.approval_state IS NULL AND datetime(rt.next_step_at) > datetime('now'))
+        OR (rt.approval_state IS NULL AND datetime(rt.next_step_at) > datetime('now') AND date(rt.next_step_at) = date('now'))
       )`;
     emailInFlightTotalByAcc.set(emailAccId, (db.prepare(
       `SELECT COUNT(*) as c FROM run_profile_tracks rt
