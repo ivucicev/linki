@@ -1495,14 +1495,13 @@ async function tick(db: ReturnType<typeof getDb>): Promise<void> {
       if (totalSlotsLeft <= 0) continue;
 
       if (emailLimits.new_contact_daily_limit != null) {
-        // Enforce new-contact vs follow-up split separately so both appear in the queue
+        // Enroll new contacts up to their sub-cap, then follow-ups get whatever slots remain.
+        // Follow-ups are NOT capped at (effectiveLimit - new_contact_daily_limit) — that would
+        // zero them out when both limits are equal. They simply take what new contacts don't use.
         const inFlightNew = emailInFlightNewByAcc.get(emailAccId) ?? 0;
-        const inFlightFollowUp = inFlightTotal - inFlightNew;
-        const followUpLimit = Math.max(0, effectiveLimit - emailLimits.new_contact_daily_limit);
+        const newSlotsLeft = Math.max(0, Math.min(totalSlotsLeft, emailLimits.new_contact_daily_limit - inFlightNew));
 
-        const newSlotsLeft = Math.max(0, emailLimits.new_contact_daily_limit - inFlightNew);
-        const followUpSlotsLeft = Math.max(0, followUpLimit - inFlightFollowUp);
-
+        let newEnrolled = 0;
         if (newSlotsLeft > 0) {
           const pendingNew = db.prepare(
             `SELECT rt.id, rt.run_profile_id, rt.track FROM run_profile_tracks rt
@@ -1513,11 +1512,13 @@ async function tick(db: ReturnType<typeof getDb>): Promise<void> {
           ).all(run.run_id, emailAccId, Math.min(newSlotsLeft, 5)) as Array<{ id: string; run_profile_id: string; track: string }>;
           if (pendingNew.length > 0) {
             spreadEnrollBatch(db, run.run_id, pendingNew, emailLimits, "email");
-            emailInFlightTotalByAcc.set(emailAccId, inFlightTotal + pendingNew.length);
-            emailInFlightNewByAcc.set(emailAccId, inFlightNew + pendingNew.length);
+            newEnrolled = pendingNew.length;
+            emailInFlightTotalByAcc.set(emailAccId, inFlightTotal + newEnrolled);
+            emailInFlightNewByAcc.set(emailAccId, inFlightNew + newEnrolled);
           }
         }
 
+        const followUpSlotsLeft = Math.max(0, totalSlotsLeft - newEnrolled);
         if (followUpSlotsLeft > 0) {
           const pendingFollowUp = db.prepare(
             `SELECT rt.id, rt.run_profile_id, rt.track FROM run_profile_tracks rt
