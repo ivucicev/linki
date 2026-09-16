@@ -1407,6 +1407,32 @@ async function tick(db: ReturnType<typeof getDb>): Promise<void> {
     }
     return firstLinkedinStepCache.get(workflowId);
   };
+  // Pre-compute in-flight counts per email account once before the enrollment loop.
+  // Updated as runs enroll so multiple runs sharing an account don't over-fill in one tick.
+  // "In-flight" = enrolled but not yet sent: waiting for approval, approved but not sent, or
+  // scheduled for a future slot. Pre-gen moves tomorrow's items to next_step_at=now (approval
+  // generation), so a time-window query always returns 0 — this count is immune to that.
+  const emailInFlightTotalByAcc = new Map<string, number>();
+  const emailInFlightNewByAcc = new Map<string, number>();
+  for (const emailAccId of emailAccountIds) {
+    const inFlightBase = `
+      rp.email_account_id = ? AND rt.track = 'email' AND rt.state = 'in_progress'
+      AND (
+        rt.approval_state IN ('waiting', 'approved')
+        OR (rt.approval_state IS NULL AND datetime(rt.next_step_at) > datetime('now'))
+      )`;
+    emailInFlightTotalByAcc.set(emailAccId, (db.prepare(
+      `SELECT COUNT(*) as c FROM run_profile_tracks rt
+       JOIN run_profiles rp ON rp.id = rt.run_profile_id
+       WHERE ${inFlightBase}`
+    ).get(emailAccId) as { c: number }).c);
+    emailInFlightNewByAcc.set(emailAccId, (db.prepare(
+      `SELECT COUNT(*) as c FROM run_profile_tracks rt
+       JOIN run_profiles rp ON rp.id = rt.run_profile_id
+       WHERE ${inFlightBase} AND rt.last_email_body IS NULL`
+    ).get(emailAccId) as { c: number }).c);
+  }
+
   const enrolledEmailPairs = new Set<string>();
   for (const run of stillActive) {
     const limits = accountLimitsMap.get(run.account_id)!;
@@ -1456,50 +1482,66 @@ async function tick(db: ReturnType<typeof getDb>): Promise<void> {
 
     for (const emailAccId of runEmailAccountIds) {
       const emailKey = `${run.run_id}|${emailAccId}|email`;
-      if (!enrolledEmailPairs.has(emailKey)) {
-        enrolledEmailPairs.add(emailKey);
-        const emailLimits = emailAccountLimitsMap.get(emailAccId);
-        if (emailLimits) {
-          const effectiveLimit = effectiveEmailLimit(emailLimits);
-          const emailsLeft = Math.max(0, effectiveLimit - (emailsSentToday.get(emailAccId) ?? 0));
-          const activeStart = String(emailLimits.active_hours_start ?? 9).padStart(2, "0");
-          const activeEnd = String(emailLimits.active_hours_end ?? 18).padStart(2, "0");
-          const emailScheduledToday = (db.prepare(
-            `SELECT COUNT(*) as c FROM run_profile_tracks rt
+      if (enrolledEmailPairs.has(emailKey)) continue;
+      enrolledEmailPairs.add(emailKey);
+
+      const emailLimits = emailAccountLimitsMap.get(emailAccId);
+      if (!emailLimits) continue;
+
+      const effectiveLimit = effectiveEmailLimit(emailLimits);
+      const sentToday = emailsSentToday.get(emailAccId) ?? 0;
+      const inFlightTotal = emailInFlightTotalByAcc.get(emailAccId) ?? 0;
+      const totalSlotsLeft = Math.max(0, effectiveLimit - sentToday - inFlightTotal);
+      if (totalSlotsLeft <= 0) continue;
+
+      if (emailLimits.new_contact_daily_limit != null) {
+        // Enforce new-contact vs follow-up split separately so both appear in the queue
+        const inFlightNew = emailInFlightNewByAcc.get(emailAccId) ?? 0;
+        const inFlightFollowUp = inFlightTotal - inFlightNew;
+        const followUpLimit = Math.max(0, effectiveLimit - emailLimits.new_contact_daily_limit);
+
+        const newSlotsLeft = Math.max(0, emailLimits.new_contact_daily_limit - inFlightNew);
+        const followUpSlotsLeft = Math.max(0, followUpLimit - inFlightFollowUp);
+
+        if (newSlotsLeft > 0) {
+          const pendingNew = db.prepare(
+            `SELECT rt.id, rt.run_profile_id, rt.track FROM run_profile_tracks rt
              JOIN run_profiles rp ON rp.id = rt.run_profile_id
-             WHERE rp.email_account_id = ? AND rt.track = 'email' AND rt.state = 'in_progress'
-             AND date(datetime(rt.next_step_at)) = date('now')
-             AND time(datetime(rt.next_step_at)) >= '${activeStart}:00:00'
-             AND time(datetime(rt.next_step_at)) < '${activeEnd}:00:00'`
-          ).get(emailAccId) as { c: number }).c;
-          // Count all in-flight items not yet sent: waiting for approval, approved but not sent,
-          // or scheduled for a future slot. Pre-generation (APPROVAL_PREGENERATE_HOURS) moves
-          // tomorrow's items to next_step_at=now and sets approval_state='waiting', making a
-          // simple "scheduled tomorrow" count always return 0. Counting all unsent in-flight
-          // items prevents enrollment from refilling tomorrow's quota every tick.
-          const emailInFlight = (db.prepare(
-            `SELECT COUNT(*) as c FROM run_profile_tracks rt
-             JOIN run_profiles rp ON rp.id = rt.run_profile_id
-             WHERE rp.email_account_id = ? AND rt.track = 'email' AND rt.state = 'in_progress'
-             AND (
-               rt.approval_state IN ('waiting', 'approved')
-               OR (rt.approval_state IS NULL AND datetime(rt.next_step_at) > datetime('now'))
-             )`
-          ).get(emailAccId) as { c: number }).c;
-          const newContactCap = emailLimits.new_contact_daily_limit != null
-            ? Math.max(0, emailLimits.new_contact_daily_limit - emailScheduledToday)
-            : emailsLeft - emailScheduledToday;
-          const inFlightCap = Math.max(0, effectiveLimit - emailInFlight);
-          const emailSlotsLeft = Math.max(0, Math.min(emailsLeft - emailScheduledToday, newContactCap, inFlightCap));
-          if (emailSlotsLeft > 0) {
-            const pendingEmail = db.prepare(
-              `SELECT rt.id, rt.run_profile_id, rt.track FROM run_profile_tracks rt
-               JOIN run_profiles rp ON rp.id = rt.run_profile_id
-               WHERE rp.run_id = ? AND rp.email_account_id = ? AND rt.track = 'email' AND rt.state = 'pending'
-               ORDER BY rt.id LIMIT ?`
-            ).all(run.run_id, emailAccId, Math.min(emailSlotsLeft, 5)) as Array<{ id: string; run_profile_id: string; track: string }>;
-            spreadEnrollBatch(db, run.run_id, pendingEmail, emailLimits, "email");
+             WHERE rp.run_id = ? AND rp.email_account_id = ? AND rt.track = 'email'
+             AND rt.state = 'pending' AND rt.last_email_body IS NULL
+             ORDER BY rt.id LIMIT ?`
+          ).all(run.run_id, emailAccId, Math.min(newSlotsLeft, 5)) as Array<{ id: string; run_profile_id: string; track: string }>;
+          if (pendingNew.length > 0) {
+            spreadEnrollBatch(db, run.run_id, pendingNew, emailLimits, "email");
+            emailInFlightTotalByAcc.set(emailAccId, inFlightTotal + pendingNew.length);
+            emailInFlightNewByAcc.set(emailAccId, inFlightNew + pendingNew.length);
           }
+        }
+
+        if (followUpSlotsLeft > 0) {
+          const pendingFollowUp = db.prepare(
+            `SELECT rt.id, rt.run_profile_id, rt.track FROM run_profile_tracks rt
+             JOIN run_profiles rp ON rp.id = rt.run_profile_id
+             WHERE rp.run_id = ? AND rp.email_account_id = ? AND rt.track = 'email'
+             AND rt.state = 'pending' AND rt.last_email_body IS NOT NULL
+             ORDER BY rt.id LIMIT ?`
+          ).all(run.run_id, emailAccId, Math.min(followUpSlotsLeft, 5)) as Array<{ id: string; run_profile_id: string; track: string }>;
+          if (pendingFollowUp.length > 0) {
+            spreadEnrollBatch(db, run.run_id, pendingFollowUp, emailLimits, "email");
+            emailInFlightTotalByAcc.set(emailAccId, (emailInFlightTotalByAcc.get(emailAccId) ?? 0) + pendingFollowUp.length);
+          }
+        }
+      } else {
+        const pendingEmail = db.prepare(
+          `SELECT rt.id, rt.run_profile_id, rt.track FROM run_profile_tracks rt
+           JOIN run_profiles rp ON rp.id = rt.run_profile_id
+           WHERE rp.run_id = ? AND rp.email_account_id = ? AND rt.track = 'email'
+           AND rt.state = 'pending'
+           ORDER BY rt.id LIMIT ?`
+        ).all(run.run_id, emailAccId, Math.min(totalSlotsLeft, 5)) as Array<{ id: string; run_profile_id: string; track: string }>;
+        if (pendingEmail.length > 0) {
+          spreadEnrollBatch(db, run.run_id, pendingEmail, emailLimits, "email");
+          emailInFlightTotalByAcc.set(emailAccId, inFlightTotal + pendingEmail.length);
         }
       }
     }
