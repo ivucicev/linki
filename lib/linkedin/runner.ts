@@ -1269,6 +1269,18 @@ async function tick(db: ReturnType<typeof getDb>): Promise<void> {
     emailsSentToday.set(emailAccountId, e);
   }
 
+  // Count waiting approvals per email account — used in execution limit check to prevent
+  // generating more approvals when the queue is already at capacity
+  const waitingApprovalsByEmailAcc = new Map<string, number>();
+  for (const emailAccountId of emailAccountIds) {
+    const w = (db.prepare(
+      `SELECT COUNT(*) as c FROM run_profile_tracks rt
+       JOIN run_profiles rp ON rp.id = rt.run_profile_id
+       WHERE rp.email_account_id = ? AND rt.approval_state = 'waiting'`
+    ).get(emailAccountId) as { c: number }).c;
+    waitingApprovalsByEmailAcc.set(emailAccountId, w);
+  }
+
   // Steps cache: (workflow_id, track) → steps filtered by that track
   const stepsCache = new Map<string, WorkflowStep[]>();
   const getSteps = (workflowId: string, track: string): WorkflowStep[] => {
@@ -1419,7 +1431,7 @@ async function tick(db: ReturnType<typeof getDb>): Promise<void> {
       rp.email_account_id = ? AND rt.track = 'email' AND rt.state = 'in_progress'
       AND (
         rt.approval_state IN ('waiting', 'approved')
-        OR (rt.approval_state IS NULL AND datetime(rt.next_step_at) > datetime('now') AND date(rt.next_step_at) = date('now'))
+        OR (rt.approval_state IS NULL AND datetime(rt.next_step_at) > datetime('now'))
       )`;
     emailInFlightTotalByAcc.set(emailAccId, (db.prepare(
       `SELECT COUNT(*) as c FROM run_profile_tracks rt
@@ -1610,9 +1622,10 @@ async function tick(db: ReturnType<typeof getDb>): Promise<void> {
       } else {
         const emailLimits = emailAccountLimitsMap.get(profileEmailAccountId);
         const sentToday = emailsSentToday.get(profileEmailAccountId) ?? 0;
+        const waitingApprovals = waitingApprovalsByEmailAcc.get(profileEmailAccountId) ?? 0;
         const planned = emailsPlanned.get(profileEmailAccountId) ?? 0;
         const effectiveLimit = emailLimits ? effectiveEmailLimit(emailLimits) : 50;
-        if (sentToday + planned >= effectiveLimit) {
+        if (sentToday + waitingApprovals + planned >= effectiveLimit) {
           toReschedule.push(tr);
         } else {
           // New contact = no prior email sent on this track; followup = has last_email_body
