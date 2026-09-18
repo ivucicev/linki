@@ -2034,7 +2034,7 @@ function Wizard({
                         />
                         <div>
                           <label className="text-xs text-base-content/40 mb-1.5 block">Step instruction</label>
-                          <textarea rows={3} placeholder="e.g. Focus on their company's growth." value={ws.aiPrompt} onChange={(e) => updateStep(idx, { aiPrompt: e.target.value })} className="w-full bg-base-300/50 border border-base-300/50 rounded-xl px-3 py-2.5 text-sm text-base-content placeholder:text-base-content/20 focus:outline-none focus:border-primary/40 resize-none" />
+                          <textarea rows={8} placeholder="e.g. Focus on their company's growth." value={ws.aiPrompt} onChange={(e) => updateStep(idx, { aiPrompt: e.target.value })} className="w-full bg-base-300/50 border border-base-300/50 rounded-xl px-3 py-2.5 text-sm text-base-content placeholder:text-base-content/20 focus:outline-none focus:border-primary/40 resize-y" />
                         </div>
                         <div className="flex items-center gap-3">
                           <label className="flex items-center gap-2 cursor-pointer">
