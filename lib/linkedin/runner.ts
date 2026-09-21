@@ -1269,14 +1269,14 @@ async function tick(db: ReturnType<typeof getDb>): Promise<void> {
     emailsSentToday.set(emailAccountId, e);
   }
 
-  // Count waiting approvals per email account — used in execution limit check to prevent
-  // generating more approvals when the queue is already at capacity
+  // Count pending-approval items per email account (waiting = in queue, approved = not yet sent).
+  // Both states mean "consumed a slot but not yet reflected in sentToday".
   const waitingApprovalsByEmailAcc = new Map<string, number>();
   for (const emailAccountId of emailAccountIds) {
     const w = (db.prepare(
       `SELECT COUNT(*) as c FROM run_profile_tracks rt
        JOIN run_profiles rp ON rp.id = rt.run_profile_id
-       WHERE rp.email_account_id = ? AND rt.approval_state = 'waiting'`
+       WHERE rp.email_account_id = ? AND rt.approval_state IN ('waiting', 'approved')`
     ).get(emailAccountId) as { c: number }).c;
     waitingApprovalsByEmailAcc.set(emailAccountId, w);
   }
@@ -1312,12 +1312,12 @@ async function tick(db: ReturnType<typeof getDb>): Promise<void> {
       const emailLimits = emailAccountLimitsMap.get(emailAccId);
       if (!emailLimits) continue;
       const limit = effectiveEmailLimit(emailLimits);
-      const waiting = (db.prepare(
+      const pendingApproval = (db.prepare(
         `SELECT COUNT(*) as c FROM run_profile_tracks rt
          JOIN run_profiles rp ON rp.id = rt.run_profile_id
-         WHERE rp.email_account_id = ? AND rt.track = 'email' AND rt.approval_state = 'waiting'`
+         WHERE rp.email_account_id = ? AND rt.track = 'email' AND rt.approval_state IN ('waiting', 'approved')`
       ).get(emailAccId) as { c: number }).c;
-      const canPregen = Math.max(0, limit - waiting);
+      const canPregen = Math.max(0, limit - pendingApproval);
       if (canPregen > 0) {
         db.prepare(
           `UPDATE run_profile_tracks SET next_step_at = datetime('now')
