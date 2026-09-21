@@ -16,6 +16,7 @@ interface ApprovalItem {
   workflow_name: string;
   step_type: string;
   step_number: number;
+  approved_today: number;
 }
 
 function ordinal(n: number): string {
@@ -217,7 +218,10 @@ export default function ApprovalsPage() {
                 <div key={group.runId} className="flex flex-col gap-4">
                   <div className="flex items-center gap-3">
                     <span className="text-xs font-semibold text-base-content/40 uppercase tracking-wider">{group.workflowName}</span>
-                    <span className="text-xs text-base-content/25">{group.items.length}</span>
+                    <span className="text-xs text-base-content/25">{group.items.length} waiting</span>
+                    {group.items[0].approved_today > 0 && (
+                      <span className="text-xs text-success/60">{group.items[0].approved_today} approved today</span>
+                    )}
                     <div className="flex-1 h-px bg-base-300/50" />
                   </div>
                   {group.items.map(item => {
