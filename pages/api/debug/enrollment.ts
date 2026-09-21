@@ -42,6 +42,12 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
       WHERE rp.run_id = ? AND rt.approval_state = 'waiting'
     `).get(run.run_id) as { c: number }).c;
 
+    const approvedToday = (db.prepare(`
+      SELECT COUNT(*) as c FROM run_profile_tracks rt
+      JOIN run_profiles rp ON rp.id = rt.run_profile_id
+      WHERE rp.run_id = ? AND date(rt.approved_at) = date('now')
+    `).get(run.run_id) as { c: number }).c;
+
     const profilesWithNoEmailAccount = (db.prepare(`
       SELECT COUNT(*) as c FROM run_profiles rp
       WHERE rp.run_id = ? AND rp.email_account_id IS NULL
@@ -59,6 +65,12 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
         AND EXISTS (
           SELECT 1 FROM run_profiles rp WHERE rp.run_id = l.run_id AND rp.target_id = l.target_id AND rp.email_account_id = ?
         )
+      `).get(accId) as { c: number }).c;
+
+      const approvedTodayAcc = (db.prepare(`
+        SELECT COUNT(*) as c FROM run_profile_tracks rt
+        JOIN run_profiles rp ON rp.id = rt.run_profile_id
+        WHERE rp.email_account_id = ? AND date(rt.approved_at) = date('now')
       `).get(accId) as { c: number }).c;
 
       const inFlightTotal = (db.prepare(`
@@ -91,6 +103,7 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
         ramp_up_enabled: ea?.ramp_up_enabled,
         ramp_start_date: ea?.ramp_start_date,
         sentToday,
+        approvedToday: approvedTodayAcc,
         inFlightTotal,
         inFlightNew,
         slotsLeft: Math.max(0, effectiveLimit - sentToday - inFlightTotal),
@@ -108,6 +121,7 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
       pendingNewContacts,
       inProgressEmail,
       waitingApprovals,
+      approvedToday,
       profilesWithNoEmailAccount,
       emailAccountIds: emailAccounts,
       emailAccountDetails,

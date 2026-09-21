@@ -499,6 +499,8 @@ function runMigrations(db: Database.Database) {
       ip TEXT,
       user_agent TEXT
     )`,
+    // Timestamp when an approval was granted — used to count approvals given today
+    "ALTER TABLE run_profile_tracks ADD COLUMN approved_at TEXT",
     // Email open tracking
     `CREATE TABLE IF NOT EXISTS email_opens (
       id TEXT PRIMARY KEY,

@@ -58,7 +58,8 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
 
   db.prepare(`
     UPDATE run_profile_tracks
-    SET pending_message = ?, pending_subject = ?, approval_state = 'approved', next_step_at = ?
+    SET pending_message = ?, pending_subject = ?, approval_state = 'approved', next_step_at = ?,
+        approved_at = datetime('now')
     WHERE id = ?
   `).run(finalMessage, finalSubject, nextStepAt, id);
 
