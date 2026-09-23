@@ -1649,6 +1649,9 @@ async function tick(db: ReturnType<typeof getDb>): Promise<void> {
       const profileEmailAccountId = tr.email_account_id;
       if (!profileEmailAccountId) {
         toExecute.push(tr);
+      } else if (tr.approval_state === 'approved') {
+        // Already counted against the limit when approved — execute directly
+        toExecute.push(tr);
       } else {
         const emailLimits = emailAccountLimitsMap.get(profileEmailAccountId);
         const approvedToday = approvedTodayByEmailAcc.get(profileEmailAccountId) ?? 0;
