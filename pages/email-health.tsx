@@ -14,12 +14,18 @@ interface AccountRow {
 }
 interface LogEntry { created_at: string; message: string; email_account_id: string; }
 interface GuardEntry { created_at: string; message: string; email_account_id: string | null; }
+interface UpcomingItem {
+  id: string; next_step_at: string; run_id: string; workflow_name: string;
+  full_name: string | null; target_email: string | null; company: string | null;
+  step_type: string; step_number: number;
+}
 
 interface Data {
   accounts: AccountRow[];
   days: string[];
   recentLogs: LogEntry[];
   guardTrips: GuardEntry[];
+  upcomingByCampaign: Record<string, UpcomingItem[]>;
 }
 
 const TZ = "Europe/Berlin";
@@ -234,6 +240,45 @@ export default function EmailHealth() {
             </table>
           </div>
         </div>
+
+        {/* Upcoming sends per campaign */}
+        {data && Object.keys(data.upcomingByCampaign).length > 0 && (
+          <div className="mb-8 flex flex-col gap-4">
+            {Object.entries(data.upcomingByCampaign).map(([runId, items]) => (
+              <div key={runId} className="bg-base-200 rounded-xl border border-base-300/50 overflow-hidden">
+                <div className="px-5 py-3 border-b border-base-300/40 flex items-center gap-2">
+                  <span className="text-sm font-medium text-base-content">{items[0]?.workflow_name}</span>
+                  <span className="text-xs text-base-content/30">{items.length} upcoming</span>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-base-300/20">
+                        <th className="text-left px-5 py-2 text-xs font-medium text-base-content/40">Contact</th>
+                        <th className="text-left px-4 py-2 text-xs font-medium text-base-content/40">Company</th>
+                        <th className="text-right px-4 py-2 text-xs font-medium text-base-content/40">Step</th>
+                        <th className="text-right px-5 py-2 text-xs font-medium text-base-content/40">Scheduled</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {items.map(item => (
+                        <tr key={item.id} className="border-b border-base-300/10 hover:bg-base-300/20 transition-colors">
+                          <td className="px-5 py-2.5">
+                            <div className="text-xs font-medium text-base-content/90">{item.full_name ?? "—"}</div>
+                            {item.target_email && <div className="text-[10px] text-base-content/40">{item.target_email}</div>}
+                          </td>
+                          <td className="px-4 py-2.5 text-xs text-base-content/50">{item.company ?? "—"}</td>
+                          <td className="px-4 py-2.5 text-right text-xs text-base-content/50">#{item.step_number}</td>
+                          <td className="px-5 py-2.5 text-right text-xs text-base-content/50">{formatDateTime(item.next_step_at)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
 
         <div className="grid grid-cols-2 gap-6">
           {/* Recent send log */}

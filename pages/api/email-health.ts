@@ -119,5 +119,38 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
     };
   });
 
-  res.json({ accounts: result, days, recentLogs, guardTrips });
+  // Next 50 upcoming sends per campaign (approved, ordered by next_step_at)
+  const upcomingQueue = db.prepare(`
+    SELECT rt.id, rt.next_step_at, rt.current_step,
+           rp.email_account_id,
+           r.id as run_id, w.name as workflow_name,
+           t.full_name, t.email as target_email, t.company,
+           COALESCE(ws.step_type, 'email') as step_type,
+           COALESCE((SELECT COUNT(*) FROM workflow_steps ws2
+             WHERE ws2.workflow_id = r.workflow_id AND ws2.track = 'email'
+             AND ws2.step_order <= ws.step_order), rt.current_step + 1) as step_number
+    FROM run_profile_tracks rt
+    JOIN run_profiles rp ON rp.id = rt.run_profile_id
+    JOIN runs r ON r.id = rp.run_id
+    JOIN workflows w ON w.id = r.workflow_id
+    JOIN targets t ON t.id = rp.target_id
+    LEFT JOIN workflow_steps ws ON ws.workflow_id = r.workflow_id
+      AND ws.track = 'email' AND ws.step_order = rt.current_step + 1
+    WHERE rt.approval_state = 'approved'
+    ORDER BY r.id, rt.next_step_at ASC
+  `).all() as {
+    id: string; next_step_at: string; current_step: number;
+    email_account_id: string; run_id: string; workflow_name: string;
+    full_name: string | null; target_email: string | null; company: string | null;
+    step_type: string; step_number: number;
+  }[];
+
+  // Group by run, cap at 50 per campaign
+  const upcomingByCampaign: Record<string, typeof upcomingQueue> = {};
+  for (const row of upcomingQueue) {
+    if (!upcomingByCampaign[row.run_id]) upcomingByCampaign[row.run_id] = [];
+    if (upcomingByCampaign[row.run_id].length < 50) upcomingByCampaign[row.run_id].push(row);
+  }
+
+  res.json({ accounts: result, days, recentLogs, guardTrips, upcomingByCampaign });
 }
