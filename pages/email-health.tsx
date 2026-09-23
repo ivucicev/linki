@@ -3,10 +3,13 @@ import { useEffect, useState, useCallback } from "react";
 import { RiMailLine, RiRefreshLine, RiShieldCheckLine, RiAlertLine } from "react-icons/ri";
 
 interface DayData { day: string; sent: number; limit: number; }
+interface CampaignUpcoming { run_id: string; workflow_name: string; count: number; }
 interface AccountRow {
   id: string; name: string; from_email: string;
   daily_email_limit: number; ramp_up_enabled: number; ramp_start_date: string | null;
   effective_limit_today: number; sent_today: number;
+  approved_today: number; upcoming_sends: number;
+  upcoming_by_campaign: CampaignUpcoming[];
   days: DayData[];
 }
 interface LogEntry { created_at: string; message: string; email_account_id: string; }
@@ -134,6 +137,8 @@ export default function EmailHealth() {
               <thead>
                 <tr className="border-b border-base-300/30">
                   <th className="text-left px-5 py-2.5 text-xs font-medium text-base-content/40 whitespace-nowrap">Account</th>
+                  <th className="text-right px-4 py-2.5 text-xs font-medium text-base-content/40 whitespace-nowrap">Approved<br/><span className="text-base-content/25 font-normal">today</span></th>
+                  <th className="text-right px-4 py-2.5 text-xs font-medium text-base-content/40 whitespace-nowrap">Upcoming<br/><span className="text-base-content/25 font-normal">sends</span></th>
                   <th className="text-right px-4 py-2.5 text-xs font-medium text-base-content/40 whitespace-nowrap">
                     Today<br/>
                     <span className="text-base-content/25 font-normal">{formatDay(today)}</span>
@@ -158,6 +163,25 @@ export default function EmailHealth() {
                           <div className="text-base-content/30 text-[10px] mt-0.5">
                             Ramp from {a.ramp_start_date}
                           </div>
+                        )}
+                      </td>
+                      {/* Approved today */}
+                      <td className="px-4 py-3 text-right">
+                        <span className={`text-sm font-semibold ${a.approved_today > 0 ? "text-warning" : "text-base-content/25"}`}>
+                          {a.approved_today > 0 ? a.approved_today : "—"}
+                        </span>
+                      </td>
+                      {/* Upcoming sends */}
+                      <td className="px-4 py-3 text-right">
+                        {a.upcoming_sends > 0 ? (
+                          <div className="flex flex-col items-end gap-0.5">
+                            <span className="text-sm font-semibold text-info">{a.upcoming_sends}</span>
+                            {a.upcoming_by_campaign.map(c => (
+                              <span key={c.run_id} className="text-[10px] text-base-content/30">{c.workflow_name} ({c.count})</span>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="text-base-content/25">—</span>
                         )}
                       </td>
                       {/* Today */}

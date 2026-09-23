@@ -72,9 +72,33 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
 
   const today = now.toISOString().slice(0, 10);
 
+  // Approved today per account
+  const approvedTodayRows = db.prepare(`
+    SELECT rp.email_account_id, COUNT(*) as c
+    FROM run_profile_tracks rt
+    JOIN run_profiles rp ON rp.id = rt.run_profile_id
+    WHERE date(rt.approved_at) = date('now')
+    GROUP BY rp.email_account_id
+  `).all() as { email_account_id: string; c: number }[];
+  const approvedTodayIndex: Record<string, number> = {};
+  for (const r of approvedTodayRows) approvedTodayIndex[r.email_account_id] = r.c;
+
+  // Upcoming sends: approved but not yet sent, per account and per campaign
+  const upcomingRows = db.prepare(`
+    SELECT rp.email_account_id, r.id as run_id, w.name as workflow_name, COUNT(*) as c
+    FROM run_profile_tracks rt
+    JOIN run_profiles rp ON rp.id = rt.run_profile_id
+    JOIN runs r ON r.id = rp.run_id
+    JOIN workflows w ON w.id = r.workflow_id
+    WHERE rt.approval_state = 'approved'
+    GROUP BY rp.email_account_id, r.id
+  `).all() as { email_account_id: string; run_id: string; workflow_name: string; c: number }[];
+
   const result = accounts.map(a => {
     const sentToday = sendsIndex[a.id]?.[today] ?? 0;
     const limit = effectiveLimit(a, now);
+    const upcomingForAccount = upcomingRows.filter(r => r.email_account_id === a.id);
+    const upcomingSends = upcomingForAccount.reduce((s, r) => s + r.c, 0);
     return {
       id: a.id,
       name: a.name,
@@ -84,6 +108,9 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
       ramp_start_date: a.ramp_start_date,
       effective_limit_today: limit,
       sent_today: sentToday,
+      approved_today: approvedTodayIndex[a.id] ?? 0,
+      upcoming_sends: upcomingSends,
+      upcoming_by_campaign: upcomingForAccount.map(r => ({ run_id: r.run_id, workflow_name: r.workflow_name, count: r.c })),
       days: days.map(day => ({
         day,
         sent: sendsIndex[a.id]?.[day] ?? 0,
