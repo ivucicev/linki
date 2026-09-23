@@ -1269,16 +1269,24 @@ async function tick(db: ReturnType<typeof getDb>): Promise<void> {
     emailsSentToday.set(emailAccountId, e);
   }
 
-  // Count pending-approval items per email account (waiting = in queue, approved = not yet sent).
-  // Both states mean "consumed a slot but not yet reflected in sentToday".
-  const waitingApprovalsByEmailAcc = new Map<string, number>();
+  // Approvals given today per email account — monotonically increasing daily counter.
+  // Used as the authoritative "slots consumed" measure for approval-required campaigns.
+  const approvedTodayByEmailAcc = new Map<string, number>();
+  // Waiting (not yet approved) per email account — combined with approvedToday for hard cap.
+  const waitingByEmailAcc = new Map<string, number>();
   for (const emailAccountId of emailAccountIds) {
-    const w = (db.prepare(
+    const approved = (db.prepare(
       `SELECT COUNT(*) as c FROM run_profile_tracks rt
        JOIN run_profiles rp ON rp.id = rt.run_profile_id
-       WHERE rp.email_account_id = ? AND rt.approval_state IN ('waiting', 'approved')`
+       WHERE rp.email_account_id = ? AND date(rt.approved_at) = date('now')`
     ).get(emailAccountId) as { c: number }).c;
-    waitingApprovalsByEmailAcc.set(emailAccountId, w);
+    approvedTodayByEmailAcc.set(emailAccountId, approved);
+    const waiting = (db.prepare(
+      `SELECT COUNT(*) as c FROM run_profile_tracks rt
+       JOIN run_profiles rp ON rp.id = rt.run_profile_id
+       WHERE rp.email_account_id = ? AND rt.approval_state = 'waiting'`
+    ).get(emailAccountId) as { c: number }).c;
+    waitingByEmailAcc.set(emailAccountId, waiting);
   }
 
   // Steps cache: (workflow_id, track) → steps filtered by that track
@@ -1312,12 +1320,9 @@ async function tick(db: ReturnType<typeof getDb>): Promise<void> {
       const emailLimits = emailAccountLimitsMap.get(emailAccId);
       if (!emailLimits) continue;
       const limit = effectiveEmailLimit(emailLimits);
-      const pendingApproval = (db.prepare(
-        `SELECT COUNT(*) as c FROM run_profile_tracks rt
-         JOIN run_profiles rp ON rp.id = rt.run_profile_id
-         WHERE rp.email_account_id = ? AND rt.track = 'email' AND rt.approval_state IN ('waiting', 'approved')`
-      ).get(emailAccId) as { c: number }).c;
-      const canPregen = Math.max(0, limit - pendingApproval);
+      const approvedToday = approvedTodayByEmailAcc.get(emailAccId) ?? 0;
+      const waiting = waitingByEmailAcc.get(emailAccId) ?? 0;
+      const canPregen = Math.max(0, limit - approvedToday - waiting);
       if (canPregen > 0) {
         db.prepare(
           `UPDATE run_profile_tracks SET next_step_at = datetime('now')
@@ -1621,11 +1626,11 @@ async function tick(db: ReturnType<typeof getDb>): Promise<void> {
         toExecute.push(tr);
       } else {
         const emailLimits = emailAccountLimitsMap.get(profileEmailAccountId);
-        const sentToday = emailsSentToday.get(profileEmailAccountId) ?? 0;
-        const waitingApprovals = waitingApprovalsByEmailAcc.get(profileEmailAccountId) ?? 0;
+        const approvedToday = approvedTodayByEmailAcc.get(profileEmailAccountId) ?? 0;
+        const waitingNow = waitingByEmailAcc.get(profileEmailAccountId) ?? 0;
         const planned = emailsPlanned.get(profileEmailAccountId) ?? 0;
         const effectiveLimit = emailLimits ? effectiveEmailLimit(emailLimits) : 50;
-        if (sentToday + waitingApprovals + planned >= effectiveLimit) {
+        if (approvedToday + waitingNow + planned >= effectiveLimit) {
           toReschedule.push(tr);
         } else {
           // New contact = no prior email sent on this track; followup = has last_email_body
