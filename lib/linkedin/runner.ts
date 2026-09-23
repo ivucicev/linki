@@ -1270,10 +1270,10 @@ async function tick(db: ReturnType<typeof getDb>): Promise<void> {
   }
 
   // Approvals given today per email account — monotonically increasing daily counter.
-  // Used as the authoritative "slots consumed" measure for approval-required campaigns.
   const approvedTodayByEmailAcc = new Map<string, number>();
-  // Waiting (not yet approved) per email account — combined with approvedToday for hard cap.
+  // Waiting (not yet approved) per email account — split by new contact vs follow-up.
   const waitingByEmailAcc = new Map<string, number>();
+  const waitingNewByEmailAcc = new Map<string, number>();
   for (const emailAccountId of emailAccountIds) {
     const approved = (db.prepare(
       `SELECT COUNT(*) as c FROM run_profile_tracks rt
@@ -1287,6 +1287,12 @@ async function tick(db: ReturnType<typeof getDb>): Promise<void> {
        WHERE rp.email_account_id = ? AND rt.approval_state = 'waiting'`
     ).get(emailAccountId) as { c: number }).c;
     waitingByEmailAcc.set(emailAccountId, waiting);
+    const waitingNew = (db.prepare(
+      `SELECT COUNT(*) as c FROM run_profile_tracks rt
+       JOIN run_profiles rp ON rp.id = rt.run_profile_id
+       WHERE rp.email_account_id = ? AND rt.approval_state = 'waiting' AND rt.last_email_body IS NULL`
+    ).get(emailAccountId) as { c: number }).c;
+    waitingNewByEmailAcc.set(emailAccountId, waitingNew);
   }
 
   // Steps cache: (workflow_id, track) → steps filtered by that track
@@ -1322,26 +1328,45 @@ async function tick(db: ReturnType<typeof getDb>): Promise<void> {
       const limit = effectiveEmailLimit(emailLimits);
       const approvedToday = approvedTodayByEmailAcc.get(emailAccId) ?? 0;
       const waiting = waitingByEmailAcc.get(emailAccId) ?? 0;
+      const waitingNew = waitingNewByEmailAcc.get(emailAccId) ?? 0;
       const canPregen = Math.max(0, limit - approvedToday - waiting);
       if (canPregen > 0) {
-        db.prepare(
-          `UPDATE run_profile_tracks SET next_step_at = datetime('now')
-           WHERE id IN (
-             SELECT rt.id FROM run_profile_tracks rt
-             JOIN run_profiles rp ON rp.id = rt.run_profile_id
-             JOIN runs r ON r.id = rp.run_id
-             JOIN workflow_steps ws ON ws.workflow_id = r.workflow_id
-               AND ws.track = rt.track AND ws.step_order = rt.current_step + 1
-             WHERE rp.email_account_id = ?
-               AND rt.state = 'in_progress' AND rt.approval_state IS NULL
-               AND rt.next_step_at > datetime('now')
-               AND rt.next_step_at <= datetime('now', '+${APPROVAL_PREGENERATE_HOURS} hours')
-               AND r.require_approval = 1 AND r.status = 'running'
-               AND ws.step_type = 'email'
-             ORDER BY rt.next_step_at
-             LIMIT ?
-           )`
-        ).run(emailAccId, canPregen);
+        const pregenBase = `
+          SELECT rt.id FROM run_profile_tracks rt
+          JOIN run_profiles rp ON rp.id = rt.run_profile_id
+          JOIN runs r ON r.id = rp.run_id
+          JOIN workflow_steps ws ON ws.workflow_id = r.workflow_id
+            AND ws.track = rt.track AND ws.step_order = rt.current_step + 1
+          WHERE rp.email_account_id = ?
+            AND rt.state = 'in_progress' AND rt.approval_state IS NULL
+            AND rt.next_step_at > datetime('now')
+            AND rt.next_step_at <= datetime('now', '+${APPROVAL_PREGENERATE_HOURS} hours')
+            AND r.require_approval = 1 AND r.status = 'running'
+            AND ws.step_type = 'email'`;
+        // New contacts first — respect new_contact_daily_limit
+        const newContactLimit = emailLimits.new_contact_daily_limit;
+        if (newContactLimit != null) {
+          const newContactSlots = Math.max(0, Math.min(canPregen, newContactLimit - waitingNew));
+          if (newContactSlots > 0) {
+            db.prepare(
+              `UPDATE run_profile_tracks SET next_step_at = datetime('now')
+               WHERE id IN (${pregenBase} AND rt.last_email_body IS NULL ORDER BY rt.next_step_at LIMIT ?)`
+            ).run(emailAccId, newContactSlots);
+          }
+          // Follow-ups fill remaining slots
+          const followUpSlots = Math.max(0, canPregen - newContactSlots);
+          if (followUpSlots > 0) {
+            db.prepare(
+              `UPDATE run_profile_tracks SET next_step_at = datetime('now')
+               WHERE id IN (${pregenBase} AND rt.last_email_body IS NOT NULL ORDER BY rt.next_step_at LIMIT ?)`
+            ).run(emailAccId, followUpSlots);
+          }
+        } else {
+          db.prepare(
+            `UPDATE run_profile_tracks SET next_step_at = datetime('now')
+             WHERE id IN (${pregenBase} ORDER BY rt.next_step_at LIMIT ?)`
+          ).run(emailAccId, canPregen);
+        }
       }
     }
 
@@ -1636,8 +1661,9 @@ async function tick(db: ReturnType<typeof getDb>): Promise<void> {
           // New contact = no prior email sent on this track; followup = has last_email_body
           const isNewContact = !tr.last_email_body;
           if (isNewContact && emailLimits?.new_contact_daily_limit != null) {
+            const waitingNew = waitingNewByEmailAcc.get(profileEmailAccountId) ?? 0;
             const newPlanned = newEmailsPlanned.get(profileEmailAccountId) ?? 0;
-            if (newPlanned >= emailLimits.new_contact_daily_limit) {
+            if (waitingNew + newPlanned >= emailLimits.new_contact_daily_limit) {
               toReschedule.push(tr);
               continue;
             }
