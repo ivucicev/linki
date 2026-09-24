@@ -1362,10 +1362,18 @@ async function tick(db: ReturnType<typeof getDb>): Promise<void> {
             ).run(emailAccId, followUpSlots);
           }
         } else {
-          db.prepare(
+          // No explicit new_contact_daily_limit — new contacts get first pick, follow-ups fill remaining
+          const newPulled = db.prepare(
             `UPDATE run_profile_tracks SET next_step_at = datetime('now')
-             WHERE id IN (${pregenBase} ORDER BY rt.next_step_at LIMIT ?)`
-          ).run(emailAccId, canPregen);
+             WHERE id IN (${pregenBase} AND rt.last_email_body IS NULL ORDER BY rt.next_step_at LIMIT ?)`
+          ).run(emailAccId, canPregen).changes;
+          const followUpSlots = Math.max(0, canPregen - newPulled);
+          if (followUpSlots > 0) {
+            db.prepare(
+              `UPDATE run_profile_tracks SET next_step_at = datetime('now')
+               WHERE id IN (${pregenBase} AND rt.last_email_body IS NOT NULL ORDER BY rt.next_step_at LIMIT ?)`
+            ).run(emailAccId, followUpSlots);
+          }
         }
       }
     }
