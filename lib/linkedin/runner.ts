@@ -1459,28 +1459,18 @@ async function tick(db: ReturnType<typeof getDb>): Promise<void> {
   };
   // Pre-compute in-flight counts per email account once before the enrollment loop.
   // Updated as runs enroll so multiple runs sharing an account don't over-fill in one tick.
-  // "In-flight" = enrolled but not yet sent: waiting for approval, approved but not sent, or
-  // scheduled for a future slot. Pre-gen moves tomorrow's items to next_step_at=now (approval
-  // generation), so a time-window query always returns 0 — this count is immune to that.
+  // "In-flight" = items consuming TODAY's daily capacity: approved today + currently waiting.
+  // Follow-up emails scheduled for future days are NOT counted — they'll be counted on their
+  // respective days. This prevents the multi-day follow-up backlog from blocking new contact enrollment.
   const emailInFlightTotalByAcc = new Map<string, number>();
   const emailInFlightNewByAcc = new Map<string, number>();
   for (const emailAccId of emailAccountIds) {
-    const inFlightBase = `
-      rp.email_account_id = ? AND rt.track = 'email' AND rt.state = 'in_progress'
-      AND (
-        rt.approval_state IN ('waiting', 'approved')
-        OR (rt.approval_state IS NULL AND datetime(rt.next_step_at) > datetime('now'))
-      )`;
-    emailInFlightTotalByAcc.set(emailAccId, (db.prepare(
-      `SELECT COUNT(*) as c FROM run_profile_tracks rt
-       JOIN run_profiles rp ON rp.id = rt.run_profile_id
-       WHERE ${inFlightBase}`
-    ).get(emailAccId) as { c: number }).c);
-    emailInFlightNewByAcc.set(emailAccId, (db.prepare(
-      `SELECT COUNT(*) as c FROM run_profile_tracks rt
-       JOIN run_profiles rp ON rp.id = rt.run_profile_id
-       WHERE ${inFlightBase} AND rt.last_email_body IS NULL`
-    ).get(emailAccId) as { c: number }).c);
+    const approvedToday = approvedTodayByEmailAcc.get(emailAccId) ?? 0;
+    const sentToday = emailsSentToday.get(emailAccId) ?? 0;
+    const waitingNow = waitingByEmailAcc.get(emailAccId) ?? 0;
+    // Use max(sent, approved) to handle both approval runs (approved_at) and non-approval runs (sent logs)
+    emailInFlightTotalByAcc.set(emailAccId, Math.max(sentToday, approvedToday) + waitingNow);
+    emailInFlightNewByAcc.set(emailAccId, waitingNewByEmailAcc.get(emailAccId) ?? 0);
   }
 
   const enrolledEmailPairs = new Set<string>();
