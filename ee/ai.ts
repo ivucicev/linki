@@ -47,7 +47,7 @@ async function callOpenRouter(
       "HTTP-Referer": "https://linki.app",
       "X-Title": "Linki",
     },
-    body: JSON.stringify({ model, messages, temperature: 0.7 }),
+    body: JSON.stringify({ model, messages, temperature: 0.7, max_tokens: 1024 }),
   });
 
   if (!resp.ok) {
