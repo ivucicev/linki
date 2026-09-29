@@ -1,5 +1,6 @@
 import type { Page } from "playwright";
 import type { InMailSurface } from "@/lib/premium";
+import { saveScreenshot } from "@/lib/linkedin/screenshot";
 
 /**
  * Sends a Sales Navigator InMail from the lead's Sales Nav profile page.
@@ -16,6 +17,7 @@ export async function sendInMail(
   salesNavUrl: string,
   subject: string,
   body: string,
+  targetId?: string,
 ): Promise<void> {
   // Navigate to the Sales Nav profile page
   await page.goto(salesNavUrl, { waitUntil: "domcontentloaded", timeout: 40000 });
@@ -24,8 +26,10 @@ export async function sendInMail(
   // Verify we're still logged in
   const url = page.url();
   if (/\/login|\/authwall|\/checkpoint|\/uas\//.test(url)) {
+    await saveScreenshot(page, "inmail_session_expired", targetId);
     throw new Error(`Sales Nav session expired before InMail — landed on: ${url}`);
   }
+  await saveScreenshot(page, "inmail_profile_loaded", targetId);
 
   // ── Step 1: Click the Message / InMail button ────────────────────────────
 
@@ -72,10 +76,12 @@ export async function sendInMail(
   }
 
   if (!clicked) {
+    await saveScreenshot(page, "inmail_no_message_btn", targetId);
     throw new Error("Could not find Message/InMail button on Sales Nav profile page");
   }
 
   await page.waitForTimeout(1500 + Math.random() * 800);
+  await saveScreenshot(page, "inmail_compose_opened", targetId);
 
   // ── Step 2: Fill in the subject line ────────────────────────────────────
 
@@ -107,6 +113,7 @@ export async function sendInMail(
   }
 
   if (!subjectFilled) {
+    await saveScreenshot(page, "inmail_no_subject_field", targetId);
     throw new Error("Could not find subject input in InMail compose dialog");
   }
 
@@ -176,9 +183,11 @@ export async function sendInMail(
   }
 
   if (!bodyFilled) {
+    await saveScreenshot(page, "inmail_no_body_field", targetId);
     throw new Error("Could not find body input in InMail compose dialog");
   }
 
+  await saveScreenshot(page, "inmail_body_typed", targetId);
   await page.waitForTimeout(800);
 
   // ── Step 4: Send ──────────────────────────────────────────────────────────
@@ -208,16 +217,19 @@ export async function sendInMail(
   }
 
   if (!sent) {
+    await saveScreenshot(page, "inmail_no_send_btn", targetId);
     throw new Error("Could not find Send button in InMail compose dialog");
   }
 
   // Wait for the compose dialog to close or a success indicator
   await page.waitForTimeout(2500);
+  await saveScreenshot(page, "inmail_after_send", targetId);
 
   // Check for error toasts / confirmation
   const errorToast = page.locator('[data-test-artdeco-toast-item-type="error"]');
   if (await errorToast.isVisible({ timeout: 2000 }).catch(() => false)) {
     const msg = await errorToast.innerText().catch(() => "unknown error");
+    await saveScreenshot(page, "inmail_send_error_toast", targetId);
     throw new Error(`Sales Nav InMail send failed: ${msg}`);
   }
 }

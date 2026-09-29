@@ -41,7 +41,7 @@ export interface RepliesSurface {
 
 export interface InMailSurface {
   // Sends a Sales Nav InMail via a live browser page (playwright Page type is open-core).
-  sendInMail(page: any, salesNavUrl: string, subject: string, body: string): Promise<void>;
+  sendInMail(page: any, salesNavUrl: string, subject: string, body: string, targetId?: string): Promise<void>;
 }
 
 export interface PremiumSurface {

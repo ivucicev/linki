@@ -826,7 +826,7 @@ async function executeStep(
       log(db, runId, target.id, "info", `Sending InMail to ${name}`);
       const page = await getSessionPage(accountId);
       try {
-        await premium.inmail.sendInMail(page, freshTarget.sales_nav_url, inmailSubject, inmailBody);
+        await premium.inmail.sendInMail(page, freshTarget.sales_nav_url, inmailSubject, inmailBody, target.id);
       } finally {
         await page.close();
       }
