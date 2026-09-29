@@ -1,7 +1,7 @@
 import Head from "next/head";
 import { useState, useEffect, useCallback } from "react";
 import { toast } from "sonner";
-import { RiCheckLine, RiCloseLine, RiMessage2Line, RiSendPlaneLine, RiMailLine, RiRefreshLine } from "react-icons/ri";
+import { RiCheckLine, RiCloseLine, RiMessage2Line, RiSendPlaneLine, RiMailLine, RiRefreshLine, RiLinkedinBoxLine } from "react-icons/ri";
 
 interface ApprovalItem {
   id: string;
@@ -12,6 +12,7 @@ interface ApprovalItem {
   title: string | null;
   company: string | null;
   linkedin_url: string | null;
+  sales_nav_url: string | null;
   run_id: string;
   workflow_name: string;
   step_type: string;
@@ -243,6 +244,16 @@ export default function ApprovalsPage() {
                                 {STEP_TYPE_ICONS[item.step_type]}
                                 {ordinal(item.step_number)} {STEP_TYPE_LABELS[item.step_type] ?? item.step_type}
                               </span>
+                              {item.linkedin_url && (
+                                <a href={item.linkedin_url} target="_blank" rel="noopener noreferrer" className="text-base-content/30 hover:text-base-content/70 transition-colors" title="LinkedIn profile">
+                                  <RiLinkedinBoxLine size={15} />
+                                </a>
+                              )}
+                              {item.sales_nav_url && (
+                                <a href={item.sales_nav_url} target="_blank" rel="noopener noreferrer" className="text-primary/40 hover:text-primary transition-colors" title="Sales Navigator">
+                                  <RiSendPlaneLine size={14} />
+                                </a>
+                              )}
                             </div>
                             {(item.title || item.company) && (
                               <p className="text-xs text-base-content/50">

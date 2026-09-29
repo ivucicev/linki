@@ -7,7 +7,7 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
   const db = getDb();
   const rows = db.prepare(`
     SELECT rt.id, rt.pending_message, rt.pending_subject, rt.track,
-           t.full_name, t.title, t.company, t.linkedin_url,
+           t.full_name, t.title, t.company, t.linkedin_url, t.sales_nav_url,
            r.id as run_id, w.name as workflow_name,
            COALESCE(ws.step_type, rt.track) as step_type,
            COALESCE((SELECT COUNT(*) FROM workflow_steps ws2
