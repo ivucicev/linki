@@ -123,33 +123,43 @@ export async function sendInMail(
 
   // ── Step 3: Fill in the message body ────────────────────────────────────
 
-  const bodySelectors = [
-    // Current Sales Nav UI (confirmed from DOM inspection — both connected and non-connected)
-    'textarea[aria-label="Type your message here or create draft"]',
-    'textarea[name="message"]',
-    'textarea._message-field_jrrmou',
-    'textarea[aria-label*="message" i]',
-    // Previous selectors
-    ".artdeco-text-input--input[data-test-compose-body]",
-    '[data-test-inmail-body-input]',
-    "div.msg-form__contenteditable",
-    'div[role="textbox"]:not([data-test-inmail-subject-input])',
-    'div[contenteditable="true"][aria-label*="message" i]',
-    'div[contenteditable="true"][aria-label*="body" i]',
-    ".ip-compose-form__body div[contenteditable]",
-    ".inmail-compose-form__message",
-    ".compose-text-area",
-    'textarea[name="body"]',
-  ];
-
   let bodyFilled = false;
 
-  // First try: selector-based
-  for (const sel of bodySelectors) {
+  // Primary: wait for the Sales Nav compose form fieldset, then grab its textarea directly.
+  // Avoids isVisible() failures caused by the 42px-tall overflow-hidden textarea.
+  try {
+    await page.waitForSelector('fieldset._message-fieldset_jrrmou', { timeout: 6000 });
+    const area = page.locator('fieldset._message-fieldset_jrrmou textarea').first();
+    await area.click();
     try {
-      const area = page.locator(sel).first();
-      if (await area.isVisible({ timeout: 5000 })) {
-        await area.click();
+      await page.evaluate((t) => navigator.clipboard.writeText(t), body);
+      await page.waitForTimeout(200);
+      await area.press("Control+V");
+    } catch {
+      await area.pressSequentially(body, { delay: 15 });
+    }
+    bodyFilled = true;
+  } catch { /* fall through to selector list */ }
+
+  // Fallback selector list (skip isVisible — just try to interact)
+  if (!bodyFilled) {
+    const bodySelectors = [
+      'textarea[aria-label="Type your message here or create draft"]',
+      'textarea[name="message"]',
+      'textarea._message-field_jrrmou',
+      'textarea[aria-label*="message" i]',
+      ".artdeco-text-input--input[data-test-compose-body]",
+      '[data-test-inmail-body-input]',
+      "div.msg-form__contenteditable",
+      'div[contenteditable="true"][aria-label*="message" i]',
+      'div[contenteditable="true"][aria-label*="body" i]',
+      ".ip-compose-form__body div[contenteditable]",
+      'textarea[name="body"]',
+    ];
+    for (const sel of bodySelectors) {
+      try {
+        const area = page.locator(sel).first();
+        await area.click({ timeout: 3000 });
         try {
           await page.evaluate((t) => navigator.clipboard.writeText(t), body);
           await page.waitForTimeout(200);
@@ -159,11 +169,11 @@ export async function sendInMail(
         }
         bodyFilled = true;
         break;
-      }
-    } catch { /* try next */ }
+      } catch { /* try next */ }
+    }
   }
 
-  // Fallback: Tab from subject field into body
+  // Last resort: Tab into focused element
   if (!bodyFilled) {
     try {
       await page.keyboard.press("Tab");
