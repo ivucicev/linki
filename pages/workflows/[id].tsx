@@ -1943,7 +1943,7 @@ function Wizard({
                         />
                         <div>
                           <label className="text-xs text-base-content/40 mb-1.5 block">Step instruction</label>
-                          <textarea rows={3} placeholder="e.g. Reference their recent role change." value={ws.aiPrompt} onChange={(e) => updateStep(idx, { aiPrompt: e.target.value })} className="w-full bg-base-300/50 border border-base-300/50 rounded-xl px-3 py-2.5 text-sm text-base-content placeholder:text-base-content/20 focus:outline-none focus:border-primary/40 resize-none" />
+                          <textarea rows={8} placeholder="e.g. Reference their recent role change." value={ws.aiPrompt} onChange={(e) => updateStep(idx, { aiPrompt: e.target.value })} className="w-full bg-base-300/50 border border-base-300/50 rounded-xl px-3 py-2.5 text-sm text-base-content placeholder:text-base-content/20 focus:outline-none focus:border-primary/40 resize-y" />
                         </div>
                         <div className="flex items-center gap-3">
                           <label className="flex items-center gap-2 cursor-pointer">
@@ -2294,7 +2294,7 @@ function Wizard({
                       Body
                       <span className="ml-2 text-base-content/25">{previewResult.body.trim().split(/\s+/).filter(Boolean).length} words</span>
                     </p>
-                    <div className="bg-base-300/50 rounded-lg px-3 py-2 text-sm whitespace-pre-wrap leading-relaxed max-h-48 overflow-y-auto">{previewResult.body}</div>
+                    <div className="bg-base-300/50 rounded-lg px-3 py-2 text-sm whitespace-pre-wrap leading-relaxed max-h-96 overflow-y-auto">{previewResult.body}</div>
                   </div>
                   <div className="flex items-center gap-4 text-xs text-base-content/30 pt-1">
                     {(previewResult.input_tokens || previewResult.output_tokens) ? (
