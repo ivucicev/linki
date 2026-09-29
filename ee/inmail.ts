@@ -31,7 +31,9 @@ export async function sendInMail(
 
   // Multiple selector candidates — Sales Nav has changed button labels over time
   const messageButtonSelectors = [
-    // Sales Nav profile "Message" primary action
+    // Current Sales Nav UI (confirmed from DOM inspection)
+    'button[data-anchor-send-inmail]',
+    // Previous Sales Nav selectors
     'button[data-control-name="send_message"]',
     'button[data-view-name="profile-topcard-send-inmail"]',
     // Text-based selectors as fallback
@@ -78,12 +80,15 @@ export async function sendInMail(
   // ── Step 2: Fill in the subject line ────────────────────────────────────
 
   const subjectSelectors = [
+    // Current Sales Nav UI (confirmed from DOM inspection)
+    'input[aria-label="Subject (required)"]',
+    'input._subject-field_jrrmou',
+    // Previous selectors
     "input#inmail-subject",
     'input[name="subject"]',
     'input[placeholder*="subject" i]',
     'input[placeholder*="Subject" i]',
     ".artdeco-text-input--input[data-test-compose-subject]",
-    // Modal/compose pane
     '[data-test-inmail-subject-input]',
     'form input[type="text"]',
   ];
@@ -110,20 +115,21 @@ export async function sendInMail(
   // ── Step 3: Fill in the message body ────────────────────────────────────
 
   const bodySelectors = [
+    // Current Sales Nav UI (confirmed from DOM inspection)
+    'textarea[name="message"]',
+    'textarea._message-field_jrrmou',
+    'textarea[aria-label*="message" i]',
+    // Previous selectors
     ".artdeco-text-input--input[data-test-compose-body]",
     '[data-test-inmail-body-input]',
     "div.msg-form__contenteditable",
     'div[role="textbox"]:not([data-test-inmail-subject-input])',
     'div[contenteditable="true"][aria-label*="message" i]',
     'div[contenteditable="true"][aria-label*="body" i]',
-    'div[contenteditable="true"][aria-label*="Message" i]',
     ".ip-compose-form__body div[contenteditable]",
-    ".ip-compose-form div[contenteditable]",
     ".inmail-compose-form__message",
     ".compose-text-area",
     'textarea[name="body"]',
-    'textarea[placeholder*="message" i]',
-    'textarea[placeholder*="Message" i]',
   ];
 
   let bodyFilled = false;
@@ -178,6 +184,9 @@ export async function sendInMail(
   // ── Step 4: Send ──────────────────────────────────────────────────────────
 
   const sendSelectors = [
+    // Current Sales Nav UI (confirmed from DOM inspection)
+    'button._button_fx0fxz',
+    // Previous selectors
     'button[data-test-send-inmail-btn]',
     'button[data-control-name="send"]',
     'button:has-text("Send")',
