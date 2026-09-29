@@ -111,23 +111,29 @@ export async function sendInMail(
 
   const bodySelectors = [
     ".artdeco-text-input--input[data-test-compose-body]",
+    '[data-test-inmail-body-input]',
     "div.msg-form__contenteditable",
-    "div[contenteditable='true']",
+    'div[role="textbox"]:not([data-test-inmail-subject-input])',
+    'div[contenteditable="true"][aria-label*="message" i]',
+    'div[contenteditable="true"][aria-label*="body" i]',
+    'div[contenteditable="true"][aria-label*="Message" i]',
+    ".ip-compose-form__body div[contenteditable]",
+    ".ip-compose-form div[contenteditable]",
+    ".inmail-compose-form__message",
+    ".compose-text-area",
     'textarea[name="body"]',
     'textarea[placeholder*="message" i]',
     'textarea[placeholder*="Message" i]',
-    '[data-test-inmail-body-input]',
-    ".compose-text-area",
-    ".inmail-compose-form__message",
   ];
 
   let bodyFilled = false;
+
+  // First try: selector-based
   for (const sel of bodySelectors) {
     try {
       const area = page.locator(sel).first();
-      if (await area.isVisible({ timeout: 3000 })) {
+      if (await area.isVisible({ timeout: 2000 })) {
         await area.click();
-        // Use clipboard paste to handle special characters reliably
         try {
           await page.evaluate((t) => navigator.clipboard.writeText(t), body);
           await page.waitForTimeout(200);
@@ -139,6 +145,28 @@ export async function sendInMail(
         break;
       }
     } catch { /* try next */ }
+  }
+
+  // Fallback: Tab from subject field into body
+  if (!bodyFilled) {
+    try {
+      await page.keyboard.press("Tab");
+      await page.waitForTimeout(400);
+      const focused = page.locator(":focus");
+      const tag = await focused.evaluate((el) => el.tagName.toLowerCase()).catch(() => "");
+      const ce = await focused.getAttribute("contenteditable").catch(() => null);
+      if (tag === "textarea" || tag === "input" || ce === "true") {
+        await focused.press("Control+a");
+        try {
+          await page.evaluate((t) => navigator.clipboard.writeText(t), body);
+          await page.waitForTimeout(200);
+          await focused.press("Control+V");
+        } catch {
+          await focused.pressSequentially(body, { delay: 15 });
+        }
+        bodyFilled = true;
+      }
+    } catch { /* ignore */ }
   }
 
   if (!bodyFilled) {
