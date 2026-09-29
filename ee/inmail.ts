@@ -114,8 +114,9 @@ export async function sendInMail(
 
   if (!subjectFilled) {
     // Already connected — Sales Nav opens a regular message dialog without a subject field.
-    // This is expected; proceed to fill body directly.
+    // This is expected; give dialog extra time to render, then proceed to fill body directly.
     await saveScreenshot(page, "inmail_no_subject_connected", targetId);
+    await page.waitForTimeout(1500);
   }
 
   await page.waitForTimeout(500);
@@ -146,7 +147,7 @@ export async function sendInMail(
   for (const sel of bodySelectors) {
     try {
       const area = page.locator(sel).first();
-      if (await area.isVisible({ timeout: 2000 })) {
+      if (await area.isVisible({ timeout: 4000 })) {
         await area.click();
         try {
           await page.evaluate((t) => navigator.clipboard.writeText(t), body);
