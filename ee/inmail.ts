@@ -52,7 +52,7 @@ export async function sendInMail(
   for (const sel of messageButtonSelectors) {
     try {
       const btn = page.locator(sel).first();
-      if (await btn.isVisible({ timeout: 3000 })) {
+      if (await btn.isVisible({ timeout: 500 })) {
         await btn.click({ delay: 100 });
         clicked = true;
         break;
@@ -103,7 +103,7 @@ export async function sendInMail(
   for (const sel of subjectSelectors) {
     try {
       const input = page.locator(sel).first();
-      if (await input.isVisible({ timeout: 3000 })) {
+      if (await input.isVisible({ timeout: 200 })) {
         await input.click();
         await input.fill(subject);
         subjectFilled = true;
@@ -124,7 +124,8 @@ export async function sendInMail(
   // ── Step 3: Fill in the message body ────────────────────────────────────
 
   const bodySelectors = [
-    // Current Sales Nav UI (confirmed from DOM inspection)
+    // Current Sales Nav UI (confirmed from DOM inspection — both connected and non-connected)
+    'textarea[aria-label="Type your message here or create draft"]',
     'textarea[name="message"]',
     'textarea._message-field_jrrmou',
     'textarea[aria-label*="message" i]',
@@ -147,7 +148,7 @@ export async function sendInMail(
   for (const sel of bodySelectors) {
     try {
       const area = page.locator(sel).first();
-      if (await area.isVisible({ timeout: 4000 })) {
+      if (await area.isVisible({ timeout: 5000 })) {
         await area.click();
         try {
           await page.evaluate((t) => navigator.clipboard.writeText(t), body);
@@ -210,7 +211,7 @@ export async function sendInMail(
   for (const sel of sendSelectors) {
     try {
       const btn = page.locator(sel).first();
-      if (await btn.isVisible({ timeout: 3000 })) {
+      if (await btn.isVisible({ timeout: 500 })) {
         await btn.click({ delay: 100 });
         sent = true;
         break;
