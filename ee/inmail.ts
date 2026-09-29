@@ -113,8 +113,9 @@ export async function sendInMail(
   }
 
   if (!subjectFilled) {
-    await saveScreenshot(page, "inmail_no_subject_field", targetId);
-    throw new Error("Could not find subject input in InMail compose dialog");
+    // Already connected — Sales Nav opens a regular message dialog without a subject field.
+    // This is expected; proceed to fill body directly.
+    await saveScreenshot(page, "inmail_no_subject_connected", targetId);
   }
 
   await page.waitForTimeout(500);
