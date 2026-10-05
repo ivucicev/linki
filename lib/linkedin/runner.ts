@@ -1380,9 +1380,9 @@ async function tick(db: ReturnType<typeof getDb>): Promise<void> {
 
     // LinkedIn tracks — cap messages and inmails per account
     for (const [accountId, limits] of accountLimitsMap) {
-      for (const { stepType, cap } of [
-        { stepType: "message", cap: limits.daily_message_limit ?? 50 },
-        { stepType: "sales_inmail", cap: limits.daily_inmail_limit ?? 15 },
+      for (const { stepType, cap, sentToday } of [
+        { stepType: "message", cap: limits.daily_message_limit ?? 50, sentToday: messagesSentToday.get(accountId) ?? 0 },
+        { stepType: "sales_inmail", cap: limits.daily_inmail_limit ?? 15, sentToday: inmailsSentToday.get(accountId) ?? 0 },
       ]) {
         const waiting = (db.prepare(
           `SELECT COUNT(*) as c FROM run_profile_tracks rt
@@ -1393,7 +1393,7 @@ async function tick(db: ReturnType<typeof getDb>): Promise<void> {
            WHERE r.account_id = ? AND rt.track = 'linkedin'
            AND rt.approval_state = 'waiting' AND ws.step_type = ?`
         ).get(accountId, stepType) as { c: number }).c;
-        const canPregen = Math.max(0, cap - waiting);
+        const canPregen = Math.max(0, cap - sentToday - waiting);
         if (canPregen > 0) {
           db.prepare(
             `UPDATE run_profile_tracks SET next_step_at = datetime('now')
