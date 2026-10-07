@@ -900,10 +900,13 @@ function Wizard({
       toast.error(err.message ?? "Failed to start");
       return;
     }
-    const { id: runId } = await runRes.json();
+    const { id: runId, skipped_not_interested } = await runRes.json();
     await fetch(`/api/runs/${runId}/start`, { method: "POST" });
     setLaunching(false);
     toast.success("Campaign launched!");
+    if (skipped_not_interested > 0) {
+      toast.warning(`${skipped_not_interested} contact${skipped_not_interested !== 1 ? "s" : ""} skipped — marked not interested`);
+    }
     onLaunched();
   }
 

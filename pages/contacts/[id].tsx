@@ -11,6 +11,7 @@ import {
   RiEditLine, RiCheckLine, RiCloseLine, RiFlowChart,
   RiCheckboxBlankCircleLine, RiDeleteBinLine, RiCalendarLine,
   RiAddLine, RiCloseCircleLine, RiPhoneLine, RiMessage2Line, RiSendPlaneLine, RiMailSendLine,
+  RiProhibitedLine,
 } from "react-icons/ri";
 
 interface LiAccount {
@@ -102,6 +103,7 @@ interface Target {
   connection_rejected_at: string | null;
   message_sent_at: string | null;
   last_replied_at: string | null;
+  not_interested_at: string | null;
   created_at: string;
   enriched_profile_at: string | null;
   notes: string | null;
@@ -599,6 +601,7 @@ export default function ContactDetailPage({
 
   const [degree, setDegree] = useState(target.degree);
   const [connectedAt, setConnectedAt] = useState(target.connected_at);
+  const [notInterestedAt, setNotInterestedAt] = useState(target.not_interested_at);
 
   const [screenshots, setScreenshots] = useState<Array<{ filename: string; url: string; ts: number; label: string }>>([]);
   const [screenshotModal, setScreenshotModal] = useState<string | null>(null);
@@ -748,6 +751,21 @@ export default function ContactDetailPage({
       setDegree(null);
       setConnectedAt(null);
       toast.success("Marked as not connected");
+    } else {
+      toast.error("Failed to update");
+    }
+  }
+
+  async function toggleNotInterested() {
+    const res = await fetch(`/api/targets/${target.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ not_interested_at: !notInterestedAt }),
+    });
+    if (res.ok) {
+      const updated = !notInterestedAt ? new Date().toISOString() : null;
+      setNotInterestedAt(updated);
+      toast.success(notInterestedAt ? "Cleared — contact can be enrolled again" : "Marked not interested");
     } else {
       toast.error("Failed to update");
     }
@@ -1127,6 +1145,18 @@ export default function ContactDetailPage({
                     {target.seniority}
                   </span>
                 )}
+                <button
+                  onClick={toggleNotInterested}
+                  title={notInterestedAt ? `Not interested since ${new Date(notInterestedAt).toLocaleDateString()} — click to clear` : "Mark as not interested"}
+                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium transition-colors ${
+                    notInterestedAt
+                      ? "bg-error/15 text-error border border-error/25 hover:bg-error/25"
+                      : "bg-base-300/50 text-base-content/30 border border-base-300/30 hover:text-error/60 hover:bg-error/5"
+                  }`}
+                >
+                  <RiProhibitedLine size={11} />
+                  {notInterestedAt ? "Not interested" : "Not interested?"}
+                </button>
               </div>
             </div>
             <div className="flex items-center gap-1.5 shrink-0">

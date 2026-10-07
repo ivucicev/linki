@@ -15,7 +15,12 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
   }
 
   if (req.method === "PUT") {
-    const { name, domain, industry, location, linkedin_url, website, notes } = req.body;
+    const { name, domain, industry, location, linkedin_url, website, notes, not_interested_at } = req.body;
+    const niClause = not_interested_at === undefined
+      ? ""
+      : not_interested_at
+        ? ", not_interested_at = datetime('now')"
+        : ", not_interested_at = NULL";
     db.prepare(`
       UPDATE companies SET
         name = COALESCE(?, name),
@@ -25,12 +30,21 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
         linkedin_url = ?,
         website = ?,
         notes = ?
+        ${niClause}
       WHERE id = ?
     `).run(
       name ?? null, domain ?? null, industry ?? null,
       location ?? null, linkedin_url ?? null, website ?? null, notes ?? null,
       id
     );
+    // Cascade not_interested status to all linked contacts
+    if (not_interested_at !== undefined) {
+      if (not_interested_at) {
+        db.prepare("UPDATE targets SET not_interested_at = datetime('now') WHERE company_id = ? AND not_interested_at IS NULL").run(id);
+      } else {
+        db.prepare("UPDATE targets SET not_interested_at = NULL WHERE company_id = ?").run(id);
+      }
+    }
     return res.json(db.prepare("SELECT * FROM companies WHERE id = ?").get(id));
   }
 

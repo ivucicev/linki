@@ -86,7 +86,21 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
       ).all() as { target_id: string }[]).map((r) => r.target_id)
     );
 
-    const targets = candidates.filter((t) => !alreadyEnrolled.has(t.target_id) && !activeElsewhere.has(t.target_id));
+    // Exclude contacts marked not interested (directly or via their company)
+    const notInterestedIds = new Set(
+      (db.prepare(
+        `SELECT t.id FROM targets t
+         LEFT JOIN companies c ON c.id = t.company_id
+         WHERE t.not_interested_at IS NOT NULL OR c.not_interested_at IS NOT NULL`
+      ).all() as { id: string }[]).map((r) => r.id)
+    );
+
+    const targets = candidates.filter((t) =>
+      !alreadyEnrolled.has(t.target_id) &&
+      !activeElsewhere.has(t.target_id) &&
+      !notInterestedIds.has(t.target_id)
+    );
+    const skipped_not_interested = candidates.filter((t) => notInterestedIds.has(t.target_id)).length;
 
     if (targets.length === 0) {
       // Clean up the run we just created since there's nothing to enroll
@@ -153,7 +167,7 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
     });
     insertMany(targets);
 
-    return res.status(201).json({ id: runId });
+    return res.status(201).json({ id: runId, skipped_not_interested });
   }
 
   res.status(405).end();

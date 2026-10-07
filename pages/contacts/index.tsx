@@ -8,7 +8,7 @@ import {
   RiExternalLinkLine, RiArrowLeftSLine, RiArrowRightSLine,
   RiUserFollowLine, RiUserAddLine, RiUserLine,
   RiMessage2Line, RiReplyLine, RiMailCheckLine, RiAtLine, RiMailLine, RiMailSendLine, RiSendPlaneLine,
-  RiSearchLine, RiAddLine, RiListCheck2, RiDeleteBinLine,
+  RiSearchLine, RiAddLine, RiListCheck2, RiDeleteBinLine, RiProhibitedLine,
 } from "react-icons/ri";
 import FilterBar, { ActiveFilter, filtersToParams } from "@/components/ui/FilterBar";
 
@@ -35,6 +35,7 @@ interface Contact {
   apollo_enriched_at: string | null;
   seniority: string | null;
   created_at: string;
+  not_interested_at: string | null;
 }
 
 interface ListOption {
@@ -210,6 +211,17 @@ export default function ContactsPage({ lists, total: initialTotal }: { lists: Li
     setPage(0);
   }
 
+  async function toggleNotInterested(id: string, current: string | null) {
+    await fetch(`/api/targets/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ not_interested_at: !current }),
+    });
+    setContacts((prev) => prev.map((c) =>
+      c.id === id ? { ...c, not_interested_at: current ? null : new Date().toISOString() } : c
+    ));
+  }
+
   const hasActiveFilters = filters.length > 0 || listId || search;
 
   return (
@@ -353,41 +365,58 @@ export default function ContactsPage({ lists, total: initialTotal }: { lists: Li
                       <td className="text-base-content/60 text-xs font-mono truncate max-w-40">{c.email ?? <span className="text-base-content/20">—</span>}</td>
                       <td onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center gap-1.5">
-                          <ConnectionIcon t={c} />
-                          {c.message_sent_at && (
-                            <span title="LinkedIn message sent" className="text-info"><RiMessage2Line size={13} /></span>
-                          )}
-                          {c.inmail_sent_at && (
-                            <span title="InMail sent" className="text-violet-400"><RiSendPlaneLine size={13} /></span>
-                          )}
-                          {c.email_sent_at && (
-                            <span title="Email sent" className="text-orange-400"><RiMailSendLine size={13} /></span>
-                          )}
-                          {c.last_replied_at && (
-                            <span title="Replied" className="text-success"><RiReplyLine size={13} /></span>
-                          )}
-                          {c.email && c.email_status === "verified" && (
-                            <span title="Verified email" className="text-success"><RiMailCheckLine size={13} /></span>
-                          )}
-                          {c.email && c.email_status !== "verified" && (
-                            <span title={`Email (${c.email_status ?? "unverified"})`} className="text-warning"><RiAtLine size={13} /></span>
-                          )}
-                          {c.apollo_enriched_at && !c.email && (
-                            <span title="Apollo enriched — no email" className="text-base-content/20"><RiMailLine size={13} /></span>
+                          {c.not_interested_at ? (
+                            <span title={`Not interested (${new Date(c.not_interested_at).toLocaleDateString()})`} className="text-error">
+                              <RiProhibitedLine size={13} />
+                            </span>
+                          ) : (
+                            <>
+                              <ConnectionIcon t={c} />
+                              {c.message_sent_at && (
+                                <span title="LinkedIn message sent" className="text-info"><RiMessage2Line size={13} /></span>
+                              )}
+                              {c.inmail_sent_at && (
+                                <span title="InMail sent" className="text-violet-400"><RiSendPlaneLine size={13} /></span>
+                              )}
+                              {c.email_sent_at && (
+                                <span title="Email sent" className="text-orange-400"><RiMailSendLine size={13} /></span>
+                              )}
+                              {c.last_replied_at && (
+                                <span title="Replied" className="text-success"><RiReplyLine size={13} /></span>
+                              )}
+                              {c.email && c.email_status === "verified" && (
+                                <span title="Verified email" className="text-success"><RiMailCheckLine size={13} /></span>
+                              )}
+                              {c.email && c.email_status !== "verified" && (
+                                <span title={`Email (${c.email_status ?? "unverified"})`} className="text-warning"><RiAtLine size={13} /></span>
+                              )}
+                              {c.apollo_enriched_at && !c.email && (
+                                <span title="Apollo enriched — no email" className="text-base-content/20"><RiMailLine size={13} /></span>
+                              )}
+                            </>
                           )}
                         </div>
                       </td>
                       <td onClick={(e) => e.stopPropagation()}>
-                        {c.linkedin_url && (
-                          <a
-                            href={c.linkedin_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center p-1 rounded text-base-content/30 hover:text-base-content transition-colors"
+                        <div className="flex items-center gap-1">
+                          <button
+                            title={c.not_interested_at ? "Clear not interested" : "Mark not interested"}
+                            className={`inline-flex items-center p-1 rounded transition-colors ${c.not_interested_at ? "text-error hover:text-error/70" : "text-base-content/20 hover:text-error/60"}`}
+                            onClick={() => toggleNotInterested(c.id, c.not_interested_at)}
                           >
-                            <RiExternalLinkLine size={13} />
-                          </a>
-                        )}
+                            <RiProhibitedLine size={13} />
+                          </button>
+                          {c.linkedin_url && (
+                            <a
+                              href={c.linkedin_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center p-1 rounded text-base-content/30 hover:text-base-content transition-colors"
+                            >
+                              <RiExternalLinkLine size={13} />
+                            </a>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))}

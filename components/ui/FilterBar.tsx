@@ -129,6 +129,11 @@ export const FILTER_FIELDS: FieldDef[] = [
     label: "Company",
     type: "text",
   },
+  {
+    key: "not_interested_at",
+    label: "Not interested",
+    type: "presence",
+  },
 ];
 
 // ─── Filter model ─────────────────────────────────────────────────────────────

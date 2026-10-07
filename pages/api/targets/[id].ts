@@ -33,6 +33,16 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
     const body = req.body as Record<string, unknown>;
     const fields: string[] = [];
     const params: unknown[] = [];
+
+    // not_interested_at: true → set to now, false/null → clear
+    if (body.not_interested_at !== undefined) {
+      if (body.not_interested_at) {
+        fields.push("not_interested_at = datetime('now')");
+      } else {
+        fields.push("not_interested_at = NULL");
+      }
+    }
+
     for (const col of EDITABLE) {
       if (body[col] !== undefined) {
         const v = body[col];

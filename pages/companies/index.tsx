@@ -4,7 +4,7 @@ import { GetServerSideProps } from "next";
 import Link from "next/link";
 import { getDb } from "@/lib/db";
 import { toast } from "sonner";
-import { RiAddLine, RiDeleteBinLine, RiBuildingLine, RiGlobalLine } from "react-icons/ri";
+import { RiAddLine, RiDeleteBinLine, RiBuildingLine, RiGlobalLine, RiProhibitedLine, RiDownloadLine } from "react-icons/ri";
 
 interface Company {
   id: string;
@@ -17,6 +17,7 @@ interface Company {
   notes: string | null;
   contact_count: number;
   created_at: string;
+  not_interested_at: string | null;
 }
 
 const BLANK_FORM = { name: "", domain: "", industry: "", location: "", linkedin_url: "", website: "", notes: "" };
@@ -97,6 +98,26 @@ export default function CompaniesPage({ initialCompanies }: { initialCompanies: 
     setCompanies((prev) => prev.filter((c) => c.id !== id));
   }
 
+  async function toggleNotInterested(id: string, current: string | null) {
+    const res = await fetch(`/api/companies/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ not_interested_at: !current }),
+    });
+    if (!res.ok) { toast.error("Failed"); return; }
+    const updated = !current ? new Date().toISOString() : null;
+    setCompanies((prev) => prev.map((c) => c.id === id ? { ...c, not_interested_at: updated } : c));
+    toast.success(current ? "Cleared not interested" : "Marked not interested — all contacts updated");
+  }
+
+  async function importFromContacts() {
+    const res = await fetch("/api/companies/import-from-contacts", { method: "POST" });
+    if (!res.ok) { toast.error("Import failed"); return; }
+    const data = await res.json();
+    toast.success(`Created ${data.created} companies, linked ${data.linked} contacts`);
+    refresh();
+  }
+
   const filtered = companies.filter((c) =>
     !search || c.name.toLowerCase().includes(search.toLowerCase()) || (c.domain ?? "").toLowerCase().includes(search.toLowerCase())
   );
@@ -113,12 +134,21 @@ export default function CompaniesPage({ initialCompanies }: { initialCompanies: 
             <h1 className="text-xl font-semibold">Companies</h1>
             <p className="text-base-content/50 text-sm mt-0.5">Organisations associated with your contacts</p>
           </div>
-          <button
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-primary text-primary-content hover:bg-primary/90 transition-colors"
-            onClick={openCreate}
-          >
-            <RiAddLine size={15} /> Add Company
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-base-300 text-base-content/70 hover:bg-base-300/80 transition-colors"
+              onClick={importFromContacts}
+              title="Create companies from contact company names and link them"
+            >
+              <RiDownloadLine size={15} /> Import from contacts
+            </button>
+            <button
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-primary text-primary-content hover:bg-primary/90 transition-colors"
+              onClick={openCreate}
+            >
+              <RiAddLine size={15} /> Add Company
+            </button>
+          </div>
         </div>
 
         <div className="mb-4">
@@ -144,6 +174,7 @@ export default function CompaniesPage({ initialCompanies }: { initialCompanies: 
                   <th>Industry</th>
                   <th>Location</th>
                   <th>Contacts</th>
+                  <th>Status</th>
                   <th></th>
                 </tr>
               </thead>
@@ -171,7 +202,24 @@ export default function CompaniesPage({ initialCompanies }: { initialCompanies: 
                     <td className="text-base-content/60 text-xs">{c.location ?? <span className="text-base-content/25">—</span>}</td>
                     <td className="text-base-content/60 text-xs">{c.contact_count}</td>
                     <td>
+                      {c.not_interested_at ? (
+                        <span
+                          title={`Not interested since ${new Date(c.not_interested_at).toLocaleDateString()}`}
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs bg-error/10 text-error border border-error/20"
+                        >
+                          <RiProhibitedLine size={11} /> Not interested
+                        </span>
+                      ) : null}
+                    </td>
+                    <td>
                       <div className="flex justify-end gap-1">
+                        <button
+                          title={c.not_interested_at ? "Clear not interested" : "Mark not interested"}
+                          className={`inline-flex items-center p-1.5 rounded-md text-xs transition-colors ${c.not_interested_at ? "text-error hover:bg-error/10" : "text-base-content/25 hover:text-error/60 hover:bg-base-300/50"}`}
+                          onClick={() => toggleNotInterested(c.id, c.not_interested_at)}
+                        >
+                          <RiProhibitedLine size={13} />
+                        </button>
                         <button
                           className="inline-flex items-center px-2 py-1 rounded-md text-xs text-base-content/40 hover:text-base-content hover:bg-base-300/50 transition-colors"
                           onClick={() => openEdit(c)}

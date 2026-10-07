@@ -501,6 +501,9 @@ function runMigrations(db: Database.Database) {
     )`,
     // Timestamp when an approval was granted — used to count approvals given today
     "ALTER TABLE run_profile_tracks ADD COLUMN approved_at TEXT",
+    // Manual not-interested flag — set when a contact or their company says they're not interested
+    "ALTER TABLE targets ADD COLUMN not_interested_at TEXT",
+    "ALTER TABLE companies ADD COLUMN not_interested_at TEXT",
     // Email open tracking
     `CREATE TABLE IF NOT EXISTS email_opens (
       id TEXT PRIMARY KEY,

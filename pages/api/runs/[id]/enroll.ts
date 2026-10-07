@@ -61,17 +61,27 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
       .all() as { target_id: string }[]).map((r) => r.target_id)
   );
 
+  const notInterestedIds = new Set(
+    (db.prepare(
+      `SELECT t.id FROM targets t
+       LEFT JOIN companies c ON c.id = t.company_id
+       WHERE t.not_interested_at IS NOT NULL OR c.not_interested_at IS NOT NULL`
+    ).all() as { id: string }[]).map((r) => r.id)
+  );
+
   let skipped_already_enrolled = 0;
   let skipped_active_elsewhere = 0;
+  let skipped_not_interested = 0;
   const eligible: string[] = [];
   for (const tid of target_ids) {
     if (alreadyEnrolled.has(tid)) { skipped_already_enrolled++; continue; }
     if (activeElsewhere.has(tid)) { skipped_active_elsewhere++; continue; }
+    if (notInterestedIds.has(tid)) { skipped_not_interested++; continue; }
     eligible.push(tid);
   }
 
   if (eligible.length === 0) {
-    return res.json({ enrolled: 0, skipped_already_enrolled, skipped_active_elsewhere });
+    return res.json({ enrolled: 0, skipped_already_enrolled, skipped_active_elsewhere, skipped_not_interested });
   }
 
   // Assign email accounts: company-grouped round-robin (same as run creation)
@@ -120,5 +130,6 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
     enrolled: eligible.length,
     skipped_already_enrolled,
     skipped_active_elsewhere,
+    skipped_not_interested,
   });
 }

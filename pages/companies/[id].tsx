@@ -1,12 +1,14 @@
 import Head from "next/head";
 import Link from "next/link";
+import { useState } from "react";
 import { GetServerSideProps } from "next";
 import { getDb } from "@/lib/db";
+import { toast } from "sonner";
 import {
   RiArrowLeftLine, RiExternalLinkLine, RiGlobalLine,
   RiMapPinLine, RiBuildingLine, RiLinkedinBoxLine, RiUserLine,
   RiMailLine, RiPhoneLine, RiMoneyDollarCircleLine, RiCalendarLine,
-  RiGroupLine, RiCodeBoxLine, RiPriceTagLine, RiErrorWarningLine,
+  RiGroupLine, RiCodeBoxLine, RiPriceTagLine, RiErrorWarningLine, RiProhibitedLine,
 } from "react-icons/ri";
 
 interface Contact {
@@ -40,6 +42,7 @@ interface Company {
   keywords: string | null;
   notes: string | null;
   email_domain_invalid: number | null;
+  not_interested_at: string | null;
   created_at: string;
   contacts: Contact[];
 }
@@ -50,7 +53,7 @@ export const getServerSideProps: GetServerSideProps = async ({ params }) => {
   const company = db.prepare(`
     SELECT id, name, domain, industry, location, city, country, linkedin_url, website,
            description, employee_count, founded_year, annual_revenue, phone,
-           technology_names, keywords, notes, email_domain_invalid, created_at
+           technology_names, keywords, notes, email_domain_invalid, not_interested_at, created_at
     FROM companies WHERE id = ?
   `).get(id) as Company | undefined;
   if (!company) return { notFound: true };
@@ -71,7 +74,23 @@ function Field({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
-export default function CompanyDetailPage({ company }: { company: Company }) {
+export default function CompanyDetailPage({ company: initialCompany }: { company: Company }) {
+  const [notInterestedAt, setNotInterestedAt] = useState(initialCompany.not_interested_at);
+
+  async function toggleNotInterested() {
+    const res = await fetch(`/api/companies/${initialCompany.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ not_interested_at: !notInterestedAt }),
+    });
+    if (!res.ok) { toast.error("Failed"); return; }
+    const updated = !notInterestedAt ? new Date().toISOString() : null;
+    setNotInterestedAt(updated);
+    toast.success(notInterestedAt ? "Cleared — contacts can be enrolled again" : "Marked not interested — all contacts updated");
+  }
+
+  const company = { ...initialCompany, not_interested_at: notInterestedAt };
+
   return (
     <>
       <Head>
@@ -126,11 +145,35 @@ export default function CompanyDetailPage({ company }: { company: Company }) {
                 </div>
               </div>
             </div>
-            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium bg-base-300 text-base-content/50 shrink-0">
-              <RiUserLine size={11} /> {company.contacts.length} contacts
-            </span>
+            <div className="flex flex-col items-end gap-2 shrink-0">
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium bg-base-300 text-base-content/50">
+                <RiUserLine size={11} /> {company.contacts.length} contacts
+              </span>
+              <button
+                onClick={toggleNotInterested}
+                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+                  company.not_interested_at
+                    ? "bg-error/10 text-error border border-error/30 hover:bg-error/20"
+                    : "bg-base-300 text-base-content/50 hover:bg-base-300/80 hover:text-base-content"
+                }`}
+              >
+                <RiProhibitedLine size={11} />
+                {company.not_interested_at ? "Not interested" : "Mark not interested"}
+              </button>
+            </div>
           </div>
         </div>
+
+        {/* Not interested banner */}
+        {company.not_interested_at && (
+          <div className="flex items-start gap-3 px-4 py-3 rounded-xl bg-error/10 border border-error/20 mb-4 text-sm text-error">
+            <RiProhibitedLine size={16} className="shrink-0 mt-0.5" />
+            <span>
+              Marked not interested on {new Date(company.not_interested_at).toLocaleDateString()} — all contacts excluded from future campaigns.{" "}
+              <button className="underline opacity-70 hover:opacity-100" onClick={toggleNotInterested}>Clear</button>
+            </span>
+          </div>
+        )}
 
         {/* Email domain invalid warning */}
         {!!company.email_domain_invalid && (
